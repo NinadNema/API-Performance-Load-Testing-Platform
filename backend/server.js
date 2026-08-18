@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const runLoadTest = require('./loadTestRunner');
 
 const app = express();
 
@@ -11,6 +12,36 @@ app.get('/api/health', (req, res) => {
 });
 
 const axios = require('axios');
+
+app.post('/api/load-test', async (req, res) => {
+    const {url, method = 'GET', concurrency, totalRequests } = req.body;
+
+    if(!url){
+        return res.status(400).json({ success: false, error: 'url is required' });
+    }
+
+    if(!concurrency || concurrency < 1){
+        return res.status(400).json({ success: false, error: 'concurrency must be at least 1' });
+    }
+
+    if(!totalRequests || totalRequests < 1){
+        return res.status(400).json({ success: false, error: 'totalRequests must be at least 1' });
+    }
+
+    try{
+        const start = performance.now();
+        const results = await runLoadTest({url, method, concurrency, totalRequests });
+        const totalDurationMs = performance.now() - start;
+
+        res.json({
+            success: true,
+            totalDurationMs: Math.round(totalDurationMs),
+            results,
+        });
+    }catch (err){
+        res.status(500).json({success: false, error: err.message});
+    }
+});
 
 app.post('/api/request', async (req, res) => {
     const { method = 'GET', url, headers = {}, body } = req.body;
