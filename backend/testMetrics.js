@@ -1,10 +1,10 @@
 const calculateMetrics = require('./metrics');
 
-const fakeResults = [
-  { durationMs: 100, success: true },
-  { durationMs: 200, success: true },
-  { durationMs: 150, success: true },
-  { durationMs: 5000, success: false }, // one slow failure, on purpose
-];
+const fakeResults = Array.from({ length: 20 }, (_, i) => ({
+  durationMs: i < 18 ? 100 + Math.random() * 50 : 2000 + Math.random() * 500,
+  success: true,
+}));
 
-console.log(calculateMetrics(fakeResults));
+const fakeTotalDurationMs = 1000; // pretend the whole test took 1 second
+
+console.log(calculateMetrics(fakeResults, fakeTotalDurationMs));
