@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const runLoadTest = require('./loadTestRunner');
+const calculateMetrics = require('./metrics');
+
 
 const app = express();
 
@@ -32,10 +34,12 @@ app.post('/api/load-test', async (req, res) => {
         const start = performance.now();
         const results = await runLoadTest({url, method, concurrency, totalRequests });
         const totalDurationMs = performance.now() - start;
+        const metrics = calculateMetrics(results, totalDurationMs);
 
         res.json({
             success: true,
             totalDurationMs: Math.round(totalDurationMs),
+            metrics,
             results,
         });
     }catch (err){
