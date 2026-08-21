@@ -6,6 +6,8 @@ const saveTestRun = require("./saveTestRun");
 
 const app = express();
 
+const { WebSocketServer } = require('ws');
+
 app.use(cors());
 app.use(express.json());
 
@@ -41,7 +43,11 @@ app.post("/api/load-test", async (req, res) => {
       method,
       concurrency,
       totalRequests,
+      onProgress: (result, completed, total) => {
+        broadcast({ type: 'progress', result, completed, total });
+      },
     });
+
     const totalDurationMs = performance.now() - start;
     const metrics = calculateMetrics(results, totalDurationMs);
 
@@ -123,6 +129,29 @@ app.get('/api/test-runs/:id', (req, res) => {
     const requests = db.prepare('SELECT * FROM requests WHERE test_run_id = ?').all(req.params.id);
     res.json({success: true, run, requests });
 });
+
+const wss = new WebSocketServer({ port: 4001 });
+
+let clients = [];
+
+wss.on('connection', (ws) => {
+  console.log('Frontend connected via WebSocket');
+  clients.push(ws);
+
+  ws.on('close', () => {
+    clients = clients.filter((c) => c !== ws);
+    console.log('Frontend disconnected');
+  });
+});
+
+function broadcast(data) {
+  const message = JSON.stringify(data);
+  clients.forEach((clients) => {
+    if(clients.readyState === 1)  {
+      clients.send(message);
+    }
+  });
+}
 
 const PORT = 4000;
 app.listen(PORT, () => {
