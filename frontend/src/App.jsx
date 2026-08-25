@@ -1,6 +1,25 @@
 import { useState } from "react";
 import { useEffect, useRef } from "react";
 
+function MetricCard({ label, value }) {
+  return (
+    <div
+      style={{
+        background: "#1a1a1a",
+        padding: "1rem",
+        borderRadius: "6px",
+        minWidth: "110px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: "0.75rem", color: "#999" }}>{label}</div>
+      <div style={{ fontSize: "1.4rem", fontWeight: "bold", color: "#eee" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("");
@@ -104,10 +123,22 @@ function App() {
     <div style={{ padding: "2em", maxWidth: "700px", margin: "0 auto" }}>
       <h1>API Load Tester</h1>
       <div style={{ marginBottom: "1rem" }}>
-        <button onClick={() => setMode("single")} disabled={mode === "single"}>
+        <button
+          onClick={() => {
+            setMode("single");
+            setResponse(null);
+          }}
+          disabled={mode === "single"}
+        >
           Single Request
         </button>
-        <button onClick={() => setMode("load")} disabled={mode === "load"}>
+        <button
+          onClick={() => {
+            setMode("load");
+            setResponse(null);
+          }}
+          disabled={mode === "load"}
+        >
           Load Test
         </button>
       </div>
@@ -170,21 +201,32 @@ function App() {
           </div>
         )}
 
-        {response && (
-          <pre
+        {response && response.metrics && (
+          <div
             style={{
-              background: "#1a1a1a",
-              color: "#eee",
-              padding: "1rem",
+              display: "flex",
+              gap: "0.75rem",
+              flexWrap: "wrap",
               marginTop: "1rem",
-              overflow: "auto",
-              maxWidth: '100%',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
             }}
           >
-            {JSON.stringify(response, null, 2)}
-          </pre>
+            <MetricCard
+              label="Total Requests"
+              value={response.metrics.totalRequests}
+            />
+            <MetricCard
+              label="Success Rate"
+              value={`${response.metrics.successRate}%`}
+            />
+            <MetricCard label="Avg (ms)" value={response.metrics.avgMs} />
+            <MetricCard label="P50 (ms)" value={response.metrics.p50} />
+            <MetricCard label="P95 (ms)" value={response.metrics.p95} />
+            <MetricCard label="P99 (ms)" value={response.metrics.p99} />
+            <MetricCard
+              label="Throughput (req/s)"
+              value={response.metrics.throughputRps}
+            />
+          </div>
         )}
       </div>
 
