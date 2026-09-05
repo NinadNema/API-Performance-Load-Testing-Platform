@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -68,6 +70,35 @@ function LatencyChart({ results }) {
             dot={{ r: 2 }}
           />
         </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function StatusBreakdownChart({ results }) {
+  const counts = {};
+  for (const r of results) {
+    const key = r.status ?? "error";
+    counts[key] = (counts[key] || 0) + 1;
+  }
+
+  const chartData = Object.entries(counts).map(([status, count]) => ({
+    status: String(status),
+    count,
+  }));
+
+  return (
+    <div style={{ width: "100%", height: 250, marginTop: "1.5rem" }}>
+      <ResponsiveContainer>
+        <BarChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+          <XAxis dataKey="status" stroke="#999" />
+          <YAxis stroke="#999" allowDecimals={false} />
+          <Tooltip
+            contentStyle={{ background: "#1a1a1a", border: "1px solid #444" }}
+          />
+          <Bar dataKey="count" fill="#4fc3f7" />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
@@ -197,8 +228,6 @@ function App() {
         </button>
       </div>
 
-      {/* Row 1: method, URL, concurrency/totalRequests (load mode only), Send button.
-          These stay side-by-side in a flex row on purpose. */}
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
         <select value={method} onChange={(e) => setMethod(e.target.value)}>
           <option value={"GET"}>GET</option>
@@ -252,7 +281,6 @@ function App() {
         </button>
       </div>
 
-      {/* Row 2: everything below stacks vertically, full width — NOT inside the flex row above. */}
       <div>
         {loading && progress.total > 0 && (
           <div style={{ marginTop: "0.5rem" }}>
@@ -290,6 +318,13 @@ function App() {
 
         {response && response.results && response.results.length > 0 && (
           <LatencyChart results={response.results} />
+        )}
+
+        {response && response.results && response.results.length > 0 && (
+          <>
+            <LatencyChart results={response.results} />
+            <StatusBreakdownChart results={response.results} />
+          </>
         )}
 
         {response && (
