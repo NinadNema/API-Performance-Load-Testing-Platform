@@ -1,5 +1,14 @@
 import { useState } from "react";
 import { useEffect, useRef } from "react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 function MetricCard({ label, value }) {
   return (
@@ -16,6 +25,50 @@ function MetricCard({ label, value }) {
       <div style={{ fontSize: "1.4rem", fontWeight: "bold", color: "#eee" }}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function LatencyChart({ results }) {
+  const chartData = [...results]
+    .sort((a, b) => a.requestIndex - b.requestIndex)
+    .map((r) => ({ request: r.requestIndex, latency: r.durationMs }));
+
+  return (
+    <div style={{ width: "100%", height: 300, marginTop: "1.5rem" }}>
+      <ResponsiveContainer>
+        <LineChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+          <XAxis
+            dataKey="request"
+            stroke="#999"
+            label={{
+              value: "Request #",
+              position: "insideBottom",
+              offset: -5,
+              fill: "#999",
+            }}
+          />
+          <YAxis
+            stroke="#999"
+            label={{
+              value: "Latency (ms)",
+              angle: -90,
+              position: "insideLeft",
+              fill: "#999",
+            }}
+          />
+          <Tooltip
+            contentStyle={{ background: "#1a1a1a", border: "1px solid #444" }}
+          />
+          <Line
+            type="monotone"
+            dataKey="latency"
+            stroke="#4fc3f7"
+            dot={{ r: 2 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -55,7 +108,7 @@ function App() {
     let parseBody = null;
 
     try {
-      parseHeaders = headers.trim ? JSON.parse(headers) : {};
+      parseHeaders = headers.trim() ? JSON.parse(headers) : {};
     } catch (err) {
       setResponse({
         success: false,
@@ -105,7 +158,7 @@ function App() {
     setProgress({ completed: 0, total: totalRequests });
 
     try {
-      const res = await fetch("http://localHost:4000/api/load-test", {
+      const res = await fetch("http://localhost:4000/api/load-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ method, url, concurrency, totalRequests }),
@@ -122,6 +175,7 @@ function App() {
   return (
     <div style={{ padding: "2em", maxWidth: "700px", margin: "0 auto" }}>
       <h1>API Load Tester</h1>
+
       <div style={{ marginBottom: "1rem" }}>
         <button
           onClick={() => {
@@ -143,6 +197,8 @@ function App() {
         </button>
       </div>
 
+      {/* Row 1: method, URL, concurrency/totalRequests (load mode only), Send button.
+          These stay side-by-side in a flex row on purpose. */}
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
         <select value={method} onChange={(e) => setMethod(e.target.value)}>
           <option value={"GET"}>GET</option>
@@ -160,7 +216,7 @@ function App() {
         />
 
         {mode === "load" && (
-          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+          <>
             <label>
               Concurrency:
               <input
@@ -181,7 +237,7 @@ function App() {
                 style={{ width: "80px", marginLeft: "0.5rem" }}
               />
             </label>
-          </div>
+          </>
         )}
 
         <button
@@ -194,7 +250,10 @@ function App() {
               : "Sending..."
             : "Send"}
         </button>
+      </div>
 
+      {/* Row 2: everything below stacks vertically, full width — NOT inside the flex row above. */}
+      <div>
         {loading && progress.total > 0 && (
           <div style={{ marginTop: "0.5rem" }}>
             Progress: {progress.completed} / {progress.total}
@@ -228,18 +287,40 @@ function App() {
             />
           </div>
         )}
+
+        {response && response.results && response.results.length > 0 && (
+          <LatencyChart results={response.results} />
+        )}
+
+        {response && (
+          <pre
+            style={{
+              background: "#1a1a1a",
+              color: "#eee",
+              padding: "1rem",
+              marginTop: "1rem",
+              overflow: "auto",
+              maxWidth: "100%",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {JSON.stringify(response, null, 2)}
+          </pre>
+        )}
       </div>
 
-      <div style={{ marginBottom: "1rem" }}>
-        <label>Headers (JSON) </label>
+      <div style={{ marginBottom: "1rem", marginTop: "1rem" }}>
+        <label>Headers (JSON)</label>
         <textarea
           value={headers}
           onChange={(e) => setHeaders(e.target.value)}
-          placeholder='{"Authorization" : "Bearer token"}'
+          placeholder='{"Authorization": "Bearer token"}'
           rows={3}
-          style={{ widtth: "100%", display: "block" }}
+          style={{ width: "100%", display: "block" }}
         />
       </div>
+
       <div style={{ marginBottom: "1rem" }}>
         <label>Body (JSON, optional)</label>
         <textarea
