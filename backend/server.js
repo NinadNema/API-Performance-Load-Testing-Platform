@@ -130,6 +130,27 @@ app.get('/api/test-runs/:id', (req, res) => {
     res.json({success: true, run, requests });
 });
 
+const compareRuns = require('./compareRuns');
+
+app.get('/api/compare', (req, res) => {
+  // console.log('req.query is:', req.query); 
+
+  const runA = req.query?.runA;
+  const runB = req.query?.runB;
+
+  if (!runA || !runB) {
+    return res.status(400).json({ success: false, error: 'runA and runB query params are required' });
+  }
+
+  try {
+    const result = compareRuns(runA, runB);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(404).json({ success: false, error: err.message });
+  }
+});
+
+
 const wss = new WebSocketServer({ port: 4001 });
 
 let clients = [];
