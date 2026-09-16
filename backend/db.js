@@ -17,6 +17,7 @@ db.exec(`
         p99 REAL,
         success_rate REAL,
         throughput_rps REAL,
+        scaling_group_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 

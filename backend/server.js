@@ -133,7 +133,6 @@ app.get('/api/test-runs/:id', (req, res) => {
 const compareRuns = require('./compareRuns');
 
 app.get('/api/compare', (req, res) => {
-  // console.log('req.query is:', req.query); 
 
   const runA = req.query?.runA;
   const runB = req.query?.runB;
@@ -147,6 +146,29 @@ app.get('/api/compare', (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(404).json({ success: false, error: err.message });
+  }
+});
+
+const runScalingTest = require('./scalingTest');
+
+app.post('/api/scaling-test', async (req, res) => {
+  const { url, method = 'GET', totalRequestsPerLevel, concurrencyLevels } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'url is required' });
+  }
+  if (!totalRequestsPerLevel || totalRequestsPerLevel < 1) {
+    return res.status(400).json({ success: false, error: 'totalRequestsPerLevel must be at least 1' });
+  }
+  if (!Array.isArray(concurrencyLevels) || concurrencyLevels.length === 0) {
+    return res.status(400).json({ success: false, error: 'concurrencyLevels must be a non-empty array' });
+  }
+
+  try {
+    const result = await runScalingTest({ url, method, totalRequestsPerLevel, concurrencyLevels });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
