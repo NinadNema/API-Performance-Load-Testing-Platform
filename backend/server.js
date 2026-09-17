@@ -172,6 +172,17 @@ app.post('/api/scaling-test', async (req, res) => {
   }
 });
 
+app.get('/api/scaling-test/:groupId', (req, res) => {
+  const runs = db.prepare(
+    'SELECT * FROM test_runs WHERE scaling_group_id = ? ORDER BY concurrency ASC'
+  ).all(req.params.groupId);
+
+  if (runs.length === 0) {
+    return res.status(404).json({ success: false, error: 'No runs found for this scaling group' });
+  }
+
+  res.json({ success: true, scalingGroupId: req.params.groupId, runs });
+});
 
 const wss = new WebSocketServer({ port: 4001 });
 
