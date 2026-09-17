@@ -3,10 +3,14 @@ const cors = require("cors");
 const runLoadTest = require("./loadTestRunner");
 const calculateMetrics = require("./metrics");
 const saveTestRun = require("./saveTestRun");
+const { generateInsights, generateScalingInsights } = require('./insights');
+const axios = require("axios");
+const db = require('./db');
+const compareRuns = require('./compareRuns');
+const runScalingTest = require('./scalingTest');
+const { WebSocketServer } = require('ws');
 
 const app = express();
-
-const { WebSocketServer } = require('ws');
 
 app.use(cors());
 app.use(express.json());
@@ -14,8 +18,6 @@ app.use(express.json());
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
-
-const axios = require("axios");
 
 app.post("/api/load-test", async (req, res) => {
   const { url, method = "GET", concurrency, totalRequests } = req.body;
@@ -49,7 +51,10 @@ app.post("/api/load-test", async (req, res) => {
     });
 
     const totalDurationMs = performance.now() - start;
+
+    // metrics must be calculated BEFORE generateInsights is called — it needs metrics as input
     const metrics = calculateMetrics(results, totalDurationMs);
+    const insights = generateInsights(metrics);
 
     const testRunId = saveTestRun({
       url,
@@ -63,8 +68,10 @@ app.post("/api/load-test", async (req, res) => {
 
     res.json({
       success: true,
+      testRunId,
       totalDurationMs: Math.round(totalDurationMs),
       metrics,
+      insights,
       results,
     });
   } catch (err) {
@@ -113,27 +120,21 @@ app.post("/api/request", async (req, res) => {
   }
 });
 
-
-const db = require('./db');
-
 app.get('/api/test-runs', (req, res) => {
-    const runs = db.prepare('SELECT * FROM test_runs ORDER BY created_at DESC').all();
-    res.json({ success: true, runs});
+  const runs = db.prepare('SELECT * FROM test_runs ORDER BY created_at DESC').all();
+  res.json({ success: true, runs });
 });
 
 app.get('/api/test-runs/:id', (req, res) => {
-    const run = db.prepare('SELECT * FROM test_runs WHERE id = ?').get(req.params.id);
-    if(!run){
-        return res.status(404).json({success: false, error: 'Test run not found' });
-    }
-    const requests = db.prepare('SELECT * FROM requests WHERE test_run_id = ?').all(req.params.id);
-    res.json({success: true, run, requests });
+  const run = db.prepare('SELECT * FROM test_runs WHERE id = ?').get(req.params.id);
+  if (!run) {
+    return res.status(404).json({ success: false, error: 'Test run not found' });
+  }
+  const requests = db.prepare('SELECT * FROM requests WHERE test_run_id = ?').all(req.params.id);
+  res.json({ success: true, run, requests });
 });
 
-const compareRuns = require('./compareRuns');
-
 app.get('/api/compare', (req, res) => {
-
   const runA = req.query?.runA;
   const runB = req.query?.runB;
 
@@ -148,8 +149,6 @@ app.get('/api/compare', (req, res) => {
     res.status(404).json({ success: false, error: err.message });
   }
 });
-
-const runScalingTest = require('./scalingTest');
 
 app.post('/api/scaling-test', async (req, res) => {
   const { url, method = 'GET', totalRequestsPerLevel, concurrencyLevels } = req.body;
@@ -173,15 +172,12 @@ app.post('/api/scaling-test', async (req, res) => {
 });
 
 app.get('/api/scaling-test/:groupId', (req, res) => {
-  const runs = db.prepare(
-    'SELECT * FROM test_runs WHERE scaling_group_id = ? ORDER BY concurrency ASC'
-  ).all(req.params.groupId);
-
+  const runs = db.prepare('SELECT * FROM test_runs WHERE scaling_group_id = ? ORDER BY concurrency ASC').all(req.params.groupId);
   if (runs.length === 0) {
     return res.status(404).json({ success: false, error: 'No runs found for this scaling group' });
   }
-
-  res.json({ success: true, scalingGroupId: req.params.groupId, runs });
+  const insights = generateScalingInsights(runs);
+  res.json({ success: true, scalingGroupId: req.params.groupId, runs, insights });
 });
 
 const wss = new WebSocketServer({ port: 4001 });
@@ -200,9 +196,9 @@ wss.on('connection', (ws) => {
 
 function broadcast(data) {
   const message = JSON.stringify(data);
-  clients.forEach((clients) => {
-    if(clients.readyState === 1)  {
-      clients.send(message);
+  clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(message);
     }
   });
 }
