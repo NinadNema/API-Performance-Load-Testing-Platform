@@ -117,6 +117,9 @@ function App() {
   const [concurrency, setConcurrency] = useState(5);
   const [totalRequests, setTotalRequests] = useState(20);
   const [testRuns, setTestRuns] = useState([]);
+  const [compareRunA, setCompareRunA] = useState("");
+  const [compareRunB, setCompareRunB] = useState("");
+  const [compareResult, setCompareResult] = useState(null);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:4001");
@@ -214,6 +217,19 @@ function App() {
     }
   }
 
+  async function handleCompare() {
+    if (!compareRunA || !compareRunB) return;
+    try {
+      const res = await fetch(
+        `http://localhost:4000/api/compare?runA=${compareRunA}&runB=${compareRunB}`,
+      );
+      const data = await res.json();
+      setCompareResult(data);
+    } catch (err) {
+      setCompareResult({ success: false, error: err.message });
+    }
+  }
+
   return (
     <div style={{ padding: "2em", maxWidth: "700px", margin: "0 auto" }}>
       <h1>API Load Tester</h1>
@@ -247,7 +263,17 @@ function App() {
         >
           History
         </button>
-        </div>
+        <button
+          onClick={() => {
+            setMode("compare");
+            setResponse(null);
+            fetchTestRuns();
+          }}
+          disabled={mode === "compare"}
+        >
+          Compare
+        </button>
+      </div>
 
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
         <select value={method} onChange={(e) => setMethod(e.target.value)}>
@@ -308,7 +334,9 @@ function App() {
             <h3>Saved Test Runs</h3>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ textAlign: "left", borderBottom: "1px solid #444" }}>
+                <tr
+                  style={{ textAlign: "left", borderBottom: "1px solid #444" }}
+                >
                   <th style={{ padding: "0.5rem" }}>ID</th>
                   <th style={{ padding: "0.5rem" }}>URL</th>
                   <th style={{ padding: "0.5rem" }}>Concurrency</th>
@@ -319,7 +347,10 @@ function App() {
               </thead>
               <tbody>
                 {testRuns.map((run) => (
-                  <tr key={run.id} style={{ borderBottom: "1px solid #2a2a2a" }}>
+                  <tr
+                    key={run.id}
+                    style={{ borderBottom: "1px solid #2a2a2a" }}
+                  >
                     <td style={{ padding: "0.5rem" }}>{run.id}</td>
                     <td
                       style={{
@@ -340,6 +371,106 @@ function App() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {mode === "compare" && (
+          <div>
+            <h3>Compare Two Runs</h3>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                alignItems: "center",
+                marginBottom: "1rem",
+              }}
+            >
+              <select
+                value={compareRunA}
+                onChange={(e) => setCompareRunA(e.target.value)}
+              >
+                <option value="">Select Run A (before)</option>
+                {testRuns.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    #{run.id} — concurrency {run.concurrency}, P95 {run.p95}ms (
+                    {run.created_at})
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={compareRunB}
+                onChange={(e) => setCompareRunB(e.target.value)}
+              >
+                <option value="">Select Run B (after)</option>
+                {testRuns.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    #{run.id} — concurrency {run.concurrency}, P95 {run.p95}ms (
+                    {run.created_at})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleCompare}
+                disabled={!compareRunA || !compareRunB}
+              >
+                Compare
+              </button>
+            </div>
+
+            {compareResult && compareResult.success && (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr
+                    style={{
+                      textAlign: "left",
+                      borderBottom: "1px solid #444",
+                    }}
+                  >
+                    <th style={{ padding: "0.5rem" }}>Metric</th>
+                    <th style={{ padding: "0.5rem" }}>Before</th>
+                    <th style={{ padding: "0.5rem" }}>After</th>
+                    <th style={{ padding: "0.5rem" }}>Change</th>
+                    <th style={{ padding: "0.5rem" }}>Verdict</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(compareResult.comparison).map(
+                    ([metric, data]) => (
+                      <tr
+                        key={metric}
+                        style={{ borderBottom: "1px solid #2a2a2a" }}
+                      >
+                        <td style={{ padding: "0.5rem" }}>{metric}</td>
+                        <td style={{ padding: "0.5rem" }}>{data.before}</td>
+                        <td style={{ padding: "0.5rem" }}>{data.after}</td>
+                        <td style={{ padding: "0.5rem" }}>
+                          {data.percentChange}%
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.5rem",
+                            color:
+                              data.verdict === "improved"
+                                ? "#4caf50"
+                                : data.verdict === "degraded"
+                                  ? "#f44336"
+                                  : "#999",
+                          }}
+                        >
+                          {data.verdict}
+                        </td>
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {compareResult && !compareResult.success && (
+              <div style={{ color: "#f44336" }}>{compareResult.error}</div>
+            )}
           </div>
         )}
 
