@@ -116,6 +116,7 @@ function App() {
   const [mode, setMode] = useState("single");
   const [concurrency, setConcurrency] = useState(5);
   const [totalRequests, setTotalRequests] = useState(20);
+  const [testRuns, setTestRuns] = useState([]);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:4001");
@@ -130,6 +131,16 @@ function App() {
 
     return () => ws.close();
   }, []);
+
+  async function fetchTestRuns() {
+    try {
+      const res = await fetch("http://localhost:4000/api/test-runs");
+      const data = await res.json();
+      if (data.success) setTestRuns(data.runs);
+    } catch (err) {
+      console.error("Failed to fetch test runs:", err);
+    }
+  }
 
   async function handleSend() {
     setLoading(true);
@@ -226,7 +237,17 @@ function App() {
         >
           Load Test
         </button>
-      </div>
+        <button
+          onClick={() => {
+            setMode("history");
+            setResponse(null);
+            fetchTestRuns();
+          }}
+          disabled={mode === "history"}
+        >
+          History
+        </button>
+        </div>
 
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
         <select value={method} onChange={(e) => setMethod(e.target.value)}>
@@ -282,6 +303,46 @@ function App() {
       </div>
 
       <div>
+        {mode === "history" && (
+          <div>
+            <h3>Saved Test Runs</h3>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", borderBottom: "1px solid #444" }}>
+                  <th style={{ padding: "0.5rem" }}>ID</th>
+                  <th style={{ padding: "0.5rem" }}>URL</th>
+                  <th style={{ padding: "0.5rem" }}>Concurrency</th>
+                  <th style={{ padding: "0.5rem" }}>P95</th>
+                  <th style={{ padding: "0.5rem" }}>Success Rate</th>
+                  <th style={{ padding: "0.5rem" }}>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {testRuns.map((run) => (
+                  <tr key={run.id} style={{ borderBottom: "1px solid #2a2a2a" }}>
+                    <td style={{ padding: "0.5rem" }}>{run.id}</td>
+                    <td
+                      style={{
+                        padding: "0.5rem",
+                        maxWidth: "250px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {run.url}
+                    </td>
+                    <td style={{ padding: "0.5rem" }}>{run.concurrency}</td>
+                    <td style={{ padding: "0.5rem" }}>{run.p95}ms</td>
+                    <td style={{ padding: "0.5rem" }}>{run.success_rate}%</td>
+                    <td style={{ padding: "0.5rem" }}>{run.created_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {loading && progress.total > 0 && (
           <div style={{ marginTop: "0.5rem" }}>
             Progress: {progress.completed} / {progress.total}
