@@ -104,6 +104,76 @@ function StatusBreakdownChart({ results }) {
   );
 }
 
+function ScalingChart({ runs }) {
+  const chartData = [...runs]
+    .sort((a, b) => a.concurrency - b.concurrency)
+    .map((r) => ({
+      concurrency: r.concurrency,
+      p95: r.metrics.p95,
+      throughput: r.metrics.throughput_rps,
+    }));
+
+  return (
+    <div style={{ width: "100%", height: 300, marginTop: "1.5rem" }}>
+      <ResponsiveContainer>
+        <LineChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+          <XAxis
+            dataKey="concurrency"
+            stroke="#999"
+            label={{
+              value: "Concurrency",
+              position: "insideBottom",
+              offset: -5,
+              fill: "#999",
+            }}
+          />
+          <YAxis
+            yAxisId="left"
+            stroke="#4fc3f7"
+            label={{
+              value: "P95 (ms)",
+              angle: -90,
+              position: "insideLeft",
+              fill: "#4fc3f7",
+            }}
+          />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            stroke="#81c784"
+            label={{
+              value: "Throughput (req/s)",
+              angle: 90,
+              position: "insideRight",
+              fill: "#81c784",
+            }}
+          />
+          <Tooltip
+            contentStyle={{ background: "#1a1a1a", border: "1px solid #444" }}
+          />
+          <Line
+            yAxisId="left"
+            type="monotone"
+            dataKey="p95"
+            stroke="#4fc3f7"
+            name="P95 (ms)"
+            dot={{ r: 3 }}
+          />
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="throughput"
+            stroke="#81c784"
+            name="Throughput (req/s)"
+            dot={{ r: 3 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function App() {
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("");
@@ -120,6 +190,11 @@ function App() {
   const [compareRunA, setCompareRunA] = useState("");
   const [compareRunB, setCompareRunB] = useState("");
   const [compareResult, setCompareResult] = useState(null);
+  const [scalingConcurrencyLevels, setScalingConcurrencyLevels] =
+    useState("1,5,10,25");
+  const [scalingRequestsPerLevel, setScalingRequestsPerLevel] = useState(20);
+  const [scalingResult, setScalingResult] = useState(null);
+  const [scalingLoading, setScalingLoading] = useState(false);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:4001");
@@ -230,6 +305,43 @@ function App() {
     }
   }
 
+  async function handleRunScalingTest() {
+    const levels = scalingConcurrencyLevels
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n) && n > 0);
+
+    if (levels.length === 0) {
+      setScalingResult({
+        success: false,
+        error: "Enter valid comma-separated concurrency levels, e.g. 1,5,10,25",
+      });
+      return;
+    }
+
+    setScalingLoading(true);
+    setScalingResult(null);
+
+    try {
+      const res = await fetch("http://localhost:4000/api/scaling-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url,
+          method,
+          totalRequestsPerLevel: scalingRequestsPerLevel,
+          concurrencyLevels: levels,
+        }),
+      });
+      const data = await res.json();
+      setScalingResult(data);
+    } catch (err) {
+      setScalingResult({ success: false, error: err.message });
+    } finally {
+      setScalingLoading(false);
+    }
+  }
+
   return (
     <div style={{ padding: "2em", maxWidth: "700px", margin: "0 auto" }}>
       <h1>API Load Tester</h1>
@@ -272,6 +384,16 @@ function App() {
           disabled={mode === "compare"}
         >
           Compare
+        </button>
+        <button
+          onClick={() => {
+            setMode("scaling");
+            setResponse(null);
+            setScalingResult(null);
+          }}
+          disabled={mode === "scaling"}
+        >
+          Scaling Test
         </button>
       </div>
 
@@ -316,16 +438,18 @@ function App() {
           </>
         )}
 
-        <button
-          onClick={mode === "single" ? handleSend : handleRunLoadTest}
-          disabled={loading || !url}
-        >
-          {loading
-            ? mode === "load"
-              ? `Running... (${progress.completed}/${progress.total})`
-              : "Sending..."
-            : "Send"}
-        </button>
+        {(mode === "single" || mode === "load") && (
+          <button
+            onClick={mode === "single" ? handleSend : handleRunLoadTest}
+            disabled={loading || !url}
+          >
+            {loading
+              ? mode === "load"
+                ? `Running... (${progress.completed}/${progress.total})`
+                : "Sending..."
+              : "Send"}
+          </button>
+        )}
       </div>
 
       <div>
@@ -470,6 +594,95 @@ function App() {
 
             {compareResult && !compareResult.success && (
               <div style={{ color: "#f44336" }}>{compareResult.error}</div>
+            )}
+          </div>
+        )}
+
+        {mode === "scaling" && (
+          <div>
+            <h3>Concurrency Scaling Test</h3>
+            <p style={{ fontSize: "0.85rem", color: "#999" }}>
+              Uses the URL/method from the input row above. Runs one full load
+              test per concurrency level, sequentially — this can take a while.
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                marginBottom: "1rem",
+                alignItems: "center",
+              }}
+            >
+              <label>
+                Concurrency levels:
+                <input
+                  type="text"
+                  value={scalingConcurrencyLevels}
+                  onChange={(e) => setScalingConcurrencyLevels(e.target.value)}
+                  style={{ marginLeft: "0.5rem", width: "150px" }}
+                />
+              </label>
+              <label>
+                Requests per level:
+                <input
+                  type="number"
+                  min="1"
+                  value={scalingRequestsPerLevel}
+                  onChange={(e) =>
+                    setScalingRequestsPerLevel(Number(e.target.value))
+                  }
+                  style={{ marginLeft: "0.5rem", width: "70px" }}
+                />
+              </label>
+              <button
+                onClick={handleRunScalingTest}
+                disabled={scalingLoading || !url}
+              >
+                {scalingLoading
+                  ? "Running scaling test..."
+                  : "Run Scaling Test"}
+              </button>
+            </div>
+
+            {scalingResult && scalingResult.success && (
+              <>
+                <ScalingChart runs={scalingResult.runs} />
+
+                {scalingResult.insights &&
+                  scalingResult.insights.length > 0 && (
+                    <div style={{ marginTop: "1rem" }}>
+                      {scalingResult.insights.map((insight, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            padding: "0.75rem",
+                            marginBottom: "0.5rem",
+                            borderRadius: "4px",
+                            background:
+                              insight.level === "error"
+                                ? "#3a1a1a"
+                                : insight.level === "warning"
+                                  ? "#3a2f1a"
+                                  : "#1a3a1f",
+                            color:
+                              insight.level === "error"
+                                ? "#ff8a80"
+                                : insight.level === "warning"
+                                  ? "#ffcc80"
+                                  : "#a5d6a7",
+                          }}
+                        >
+                          {insight.message}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+              </>
+            )}
+
+            {scalingResult && !scalingResult.success && (
+              <div style={{ color: "#f44336" }}>{scalingResult.error}</div>
             )}
           </div>
         )}
