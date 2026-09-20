@@ -9,6 +9,7 @@ const db = require('./db');
 const compareRuns = require('./compareRuns');
 const runScalingTest = require('./scalingTest');
 const { WebSocketServer } = require('ws');
+const { runWorkflow } = require('./workflow');
 
 const app = express();
 
@@ -52,7 +53,6 @@ app.post("/api/load-test", async (req, res) => {
 
     const totalDurationMs = performance.now() - start;
 
-    // metrics must be calculated BEFORE generateInsights is called — it needs metrics as input
     const metrics = calculateMetrics(results, totalDurationMs);
     const insights = generateInsights(metrics);
 
@@ -178,6 +178,22 @@ app.get('/api/scaling-test/:groupId', (req, res) => {
   }
   const insights = generateScalingInsights(runs);
   res.json({ success: true, scalingGroupId: req.params.groupId, runs, insights });
+});
+
+
+app.post('/api/workflow', async (req, res) => {
+  const { steps } = req.body;
+
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return res.status(400).json({ success: false, error: 'steps must be a non-empty array' });
+  }
+
+  try {
+    const result = await runWorkflow(steps);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 const wss = new WebSocketServer({ port: 4001 });
