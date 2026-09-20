@@ -110,7 +110,7 @@ function ScalingChart({ runs }) {
     .map((r) => ({
       concurrency: r.concurrency,
       p95: r.metrics.p95,
-      throughput: r.metrics.throughput_rps,
+      throughput: r.metrics.throughputRps,
     }));
 
   return (
@@ -195,6 +195,21 @@ function App() {
   const [scalingRequestsPerLevel, setScalingRequestsPerLevel] = useState(20);
   const [scalingResult, setScalingResult] = useState(null);
   const [scalingLoading, setScalingLoading] = useState(false);
+  const [workflowSteps, setWorkflowSteps] = useState(
+    `[
+  {
+    "name": "getPost",
+    "request": { "method": "GET", "url": "https://jsonplaceholder.typicode.com/posts/1" },
+    "extract": { "userId": "body.userId" }
+  },
+  {
+    "name": "getUser",
+    "request": { "method": "GET", "url": "https://jsonplaceholder.typicode.com/users/{{userId}}" }
+  }
+]`
+  );
+  const [workflowResult, setWorkflowResult] = useState(null);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:4001");
@@ -342,6 +357,44 @@ function App() {
     }
   }
 
+  async function handleRunWorkflow() {
+    let steps;
+    try {
+      steps = JSON.parse(workflowSteps);
+    } catch (err) {
+      setWorkflowResult({
+        success: false,
+        error: "Steps is not valid JSON: " + err.message,
+      });
+      return;
+    }
+
+    if (!Array.isArray(steps) || steps.length === 0) {
+      setWorkflowResult({
+        success: false,
+        error: "Steps must be a non-empty array",
+      });
+      return;
+    }
+
+    setWorkflowLoading(true);
+    setWorkflowResult(null);
+
+    try {
+      const res = await fetch("http://localhost:4000/api/workflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steps }),
+      });
+      const data = await res.json();
+      setWorkflowResult(data);
+    } catch (err) {
+      setWorkflowResult({ success: false, error: err.message });
+    } finally {
+      setWorkflowLoading(false);
+    }
+  }
+
   return (
     <div style={{ padding: "2em", maxWidth: "700px", margin: "0 auto" }}>
       <h1>API Load Tester</h1>
@@ -394,6 +447,16 @@ function App() {
           disabled={mode === "scaling"}
         >
           Scaling Test
+        </button>
+        <button
+          onClick={() => {
+            setMode("workflow");
+            setResponse(null);
+            setWorkflowResult(null);
+          }}
+          disabled={mode === "workflow"}
+        >
+          Workflow
         </button>
       </div>
 
@@ -687,6 +750,99 @@ function App() {
           </div>
         )}
 
+        {mode === "workflow" && (
+          <div>
+            <h3>Multi-Step Workflow</h3>
+            <p style={{ fontSize: "0.85rem", color: "#999" }}>
+              Define steps as JSON. Use{" "}
+              <code>{"{{variableName}}"}</code> anywhere in a later step to
+              reference a value extracted from an earlier one.
+            </p>
+
+            <textarea
+              value={workflowSteps}
+              onChange={(e) => setWorkflowSteps(e.target.value)}
+              rows={14}
+              style={{
+                width: "100%",
+                display: "block",
+                fontFamily: "monospace",
+                fontSize: "0.85rem",
+              }}
+            />
+
+            <button
+              onClick={handleRunWorkflow}
+              disabled={workflowLoading}
+              style={{ marginTop: "0.5rem" }}
+            >
+              {workflowLoading ? "Running workflow..." : "Run Workflow"}
+            </button>
+
+            {workflowResult && workflowResult.success && (
+              <div style={{ marginTop: "1rem" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid #444",
+                      }}
+                    >
+                      <th style={{ padding: "0.5rem" }}>Step</th>
+                      <th style={{ padding: "0.5rem" }}>Status</th>
+                      <th style={{ padding: "0.5rem" }}>Duration</th>
+                      <th style={{ padding: "0.5rem" }}>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workflowResult.steps.map((step, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #2a2a2a" }}>
+                        <td style={{ padding: "0.5rem" }}>{step.name}</td>
+                        <td style={{ padding: "0.5rem" }}>
+                          {step.status ?? "—"}
+                        </td>
+                        <td style={{ padding: "0.5rem" }}>
+                          {step.durationMs}ms
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.5rem",
+                            color: step.success ? "#4caf50" : "#f44336",
+                          }}
+                        >
+                          {step.success ? "Success" : step.error || "Failed"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div style={{ marginTop: "1rem" }}>
+                  <strong>Extracted values:</strong>
+                  <pre
+                    style={{
+                      background: "#1a1a1a",
+                      color: "#eee",
+                      padding: "0.75rem",
+                      marginTop: "0.5rem",
+                      overflow: "auto",
+                    }}
+                  >
+                    {JSON.stringify(workflowResult.context, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {workflowResult && !workflowResult.success && (
+              <div style={{ color: "#f44336", marginTop: "1rem" }}>
+                {workflowResult.error}
+              </div>
+            )}
+          </div>
+        )}
+
         {loading && progress.total > 0 && (
           <div style={{ marginTop: "0.5rem" }}>
             Progress: {progress.completed} / {progress.total}
@@ -719,10 +875,6 @@ function App() {
               value={response.metrics.throughputRps}
             />
           </div>
-        )}
-
-        {response && response.results && response.results.length > 0 && (
-          <LatencyChart results={response.results} />
         )}
 
         {response && response.results && response.results.length > 0 && (
