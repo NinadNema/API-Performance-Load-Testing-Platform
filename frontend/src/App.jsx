@@ -14,13 +14,14 @@ import "./App.css";
 import { autoDetectAndParse } from "./utils/importers";
 import { generateExecutivePdfReport } from "./utils/generatePdfReport";
 
-function MetricCard({ label, value, highlight = false, unit = "" }) {
+function MetricCard({ label, value, highlight = false, unit = "", subtitle = "" }) {
   return (
     <div className="metric-card">
       <span className="metric-label">{label}</span>
       <span className={`metric-value ${highlight ? "highlight" : ""}`}>
         {value ?? "—"}{unit}
       </span>
+      {subtitle && <span style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>{subtitle}</span>}
     </div>
   );
 }
@@ -79,11 +80,16 @@ function ApdexCard({ apdex }) {
       ? "apdex-poor"
       : "apdex-unacceptable";
 
+  const total = (apdex.satisfied || 0) + (apdex.tolerating || 0) + (apdex.frustrated || 0) || 1;
+  const satPct = Math.round(((apdex.satisfied || 0) / total) * 100);
+  const tolPct = Math.round(((apdex.tolerating || 0) / total) * 100);
+  const fruPct = Math.round(((apdex.frustrated || 0) / total) * 100);
+
   return (
     <div className={`apdex-card ${ratingClass}`}>
       <div className="apdex-header">
         <div className="apdex-title">
-          <span>Apdex (Application Performance Index)</span>
+          <span>Apdex User Satisfaction Index</span>
           <span className="apdex-badge">{apdex.rating}</span>
         </div>
         <div className="apdex-score-display">{apdex.score.toFixed(2)}</div>
@@ -92,25 +98,25 @@ function ApdexCard({ apdex }) {
       <div className="apdex-progress-bar">
         <div
           className="apdex-bar satisfied"
-          style={{ width: `${(apdex.satisfied / (apdex.satisfied + apdex.tolerating + apdex.frustrated || 1)) * 100}%` }}
-          title={`Satisfied (<= ${apdex.targetLatencyMs}ms)`}
+          style={{ width: `${satPct}%` }}
+          title={`Satisfied (${satPct}%)`}
         />
         <div
           className="apdex-bar tolerating"
-          style={{ width: `${(apdex.tolerating / (apdex.satisfied + apdex.tolerating + apdex.frustrated || 1)) * 100}%` }}
-          title={`Tolerating (<= ${apdex.targetLatencyMs * 4}ms)`}
+          style={{ width: `${tolPct}%` }}
+          title={`Tolerating (${tolPct}%)`}
         />
         <div
           className="apdex-bar frustrated"
-          style={{ width: `${(apdex.frustrated / (apdex.satisfied + apdex.tolerating + apdex.frustrated || 1)) * 100}%` }}
-          title={`Frustrated (> ${apdex.targetLatencyMs * 4}ms or errors)`}
+          style={{ width: `${fruPct}%` }}
+          title={`Frustrated (${fruPct}%)`}
         />
       </div>
 
       <div className="apdex-stats">
-        <span>🟢 Satisfied: <strong>{apdex.satisfied}</strong> (≤{apdex.targetLatencyMs}ms)</span>
-        <span>🟡 Tolerating: <strong>{apdex.tolerating}</strong> (≤{apdex.targetLatencyMs * 4}ms)</span>
-        <span>🔴 Frustrated: <strong>{apdex.frustrated}</strong> (&gt;{apdex.targetLatencyMs * 4}ms / err)</span>
+        <span>🟢 Satisfied ({satPct}%): <strong>{apdex.satisfied}</strong> (≤{apdex.targetLatencyMs}ms)</span>
+        <span>🟡 Tolerating ({tolPct}%): <strong>{apdex.tolerating}</strong> (≤{apdex.targetLatencyMs * 4}ms)</span>
+        <span>🔴 Frustrated ({fruPct}%): <strong>{apdex.frustrated}</strong> (&gt;{apdex.targetLatencyMs * 4}ms / errors)</span>
       </div>
     </div>
   );
@@ -131,7 +137,7 @@ function SlaVerdictCard({ slaVerdict }) {
           <div key={idx} className={`sla-rule-item ${rule.passed ? "rule-pass" : "rule-fail"}`}>
             <div className="sla-rule-metric">{rule.metric}</div>
             <div className="sla-rule-target">Target: <span>{rule.target}</span></div>
-            <div className="sla-rule-actual">Actual: <strong>{rule.actual}</strong></div>
+            <div className="sla-rule-actual">Measured: <strong>{rule.actual}</strong></div>
             <div className="sla-rule-status">{rule.passed ? "PASSED" : "FAILED"}</div>
           </div>
         ))}
@@ -151,23 +157,29 @@ function LatencyChart({ results }) {
   }));
 
   return (
-    <div className="chart-wrapper" style={{ marginTop: "1rem" }}>
-      <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
-        Per-Request Latency Timeline (ms)
+    <div className="chart-wrapper">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+        <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+          Per-Request Latency Timeline
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+          {results.length} requests plotted
+        </div>
       </div>
       <div style={{ width: "100%", height: 260 }}>
         <ResponsiveContainer>
           <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis dataKey="request" stroke="var(--text-dim)" fontSize={11} interval="preserveStartEnd" />
             <YAxis stroke="var(--text-dim)" fontSize={11} unit="ms" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "var(--bg-card)",
-                borderColor: "var(--border-color)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--text-main)",
+                backgroundColor: "#0f172a",
+                borderColor: "rgba(255,255,255,0.15)",
+                borderRadius: "8px",
+                color: "#f8fafc",
                 fontSize: "0.8rem",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
               }}
             />
             <Line
@@ -201,26 +213,28 @@ function StatusBreakdownChart({ results }) {
   }));
 
   return (
-    <div className="chart-wrapper" style={{ marginTop: "1rem" }}>
-      <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
-        HTTP Status Distribution
+    <div className="chart-wrapper">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+        <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+          HTTP Status Distribution
+        </div>
       </div>
       <div style={{ width: "100%", height: 200 }}>
         <ResponsiveContainer>
           <BarChart data={data} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis dataKey="status" stroke="var(--text-dim)" fontSize={11} />
             <YAxis stroke="var(--text-dim)" fontSize={11} />
             <Tooltip
               contentStyle={{
-                backgroundColor: "var(--bg-card)",
-                borderColor: "var(--border-color)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--text-main)",
+                backgroundColor: "#0f172a",
+                borderColor: "rgba(255,255,255,0.15)",
+                borderRadius: "8px",
+                color: "#f8fafc",
                 fontSize: "0.8rem",
               }}
             />
-            <Bar dataKey="count" name="Count" fill="#818cf8" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="count" name="Count" fill="#818cf8" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -239,23 +253,25 @@ function ScalingChart({ runs }) {
   }));
 
   return (
-    <div className="chart-wrapper" style={{ marginTop: "1rem" }}>
-      <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
-        Scaling Profile: Latency vs. Throughput Curve
+    <div className="chart-wrapper">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+        <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+          Scaling Profile: Latency vs. Throughput Curve
+        </div>
       </div>
       <div style={{ width: "100%", height: 280 }}>
         <ResponsiveContainer>
           <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis dataKey="concurrency" stroke="var(--text-dim)" fontSize={11} />
             <YAxis yAxisId="left" stroke="#38bdf8" fontSize={11} unit="ms" />
             <YAxis yAxisId="right" orientation="right" stroke="#34d399" fontSize={11} unit=" rps" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "var(--bg-card)",
-                borderColor: "var(--border-color)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--text-main)",
+                backgroundColor: "#0f172a",
+                borderColor: "rgba(255,255,255,0.15)",
+                borderRadius: "8px",
+                color: "#f8fafc",
                 fontSize: "0.8rem",
               }}
             />
@@ -301,8 +317,43 @@ function StatusBadge({ status }) {
   return <span className="badge badge-5xx">{status} SERVER ERR</span>;
 }
 
+const PRESETS = [
+  {
+    name: "⚡ Standard Load (20 VUs)",
+    mode: "load",
+    method: "GET",
+    url: "https://jsonplaceholder.typicode.com/posts/1",
+    concurrency: 5,
+    totalRequests: 20,
+    headers: '{\n  "Content-Type": "application/json"\n}',
+    body: "",
+  },
+  {
+    name: "🚀 High Burst (50 VUs)",
+    mode: "load",
+    method: "GET",
+    url: "https://jsonplaceholder.typicode.com/posts/1",
+    concurrency: 25,
+    totalRequests: 100,
+    headers: '{\n  "Content-Type": "application/json"\n}',
+    body: "",
+  },
+  {
+    name: "📈 Step Scaling Matrix",
+    mode: "scaling",
+    method: "GET",
+    url: "https://jsonplaceholder.typicode.com/posts/1",
+    scalingLevels: "1, 5, 10, 25",
+    scalingReqs: 20,
+  },
+  {
+    name: "🔗 Chained User Workflow",
+    mode: "workflow",
+  },
+];
+
 export default function App() {
-  const [mode, setMode] = useState("single");
+  const [mode, setMode] = useState("load");
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/posts/1");
   const [headers, setHeaders] = useState('{\n  "Content-Type": "application/json"\n}');
@@ -335,6 +386,7 @@ export default function App() {
   const wsRef = useRef(null);
 
   const [testRuns, setTestRuns] = useState([]);
+  const [historySearch, setHistorySearch] = useState("");
   const [selectedRunDetail, setSelectedRunDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -547,6 +599,27 @@ export default function App() {
     setShowImportModal(false);
   }
 
+  function handleLoadPreset(preset) {
+    if (preset.mode) setMode(preset.mode);
+    if (preset.method) setMethod(preset.method);
+    if (preset.url) setUrl(preset.url);
+    if (preset.concurrency) setConcurrency(preset.concurrency);
+    if (preset.totalRequests) setTotalRequests(preset.totalRequests);
+    if (preset.headers) setHeaders(preset.headers);
+    if (preset.body !== undefined) setBody(preset.body);
+    if (preset.scalingLevels) setScalingLevels(preset.scalingLevels);
+    if (preset.scalingReqs) setScalingReqs(preset.scalingReqs);
+  }
+
+  function prettyPrintJson(text, setter) {
+    try {
+      const obj = JSON.parse(text);
+      setter(JSON.stringify(obj, null, 2));
+    } catch {
+      alert("Invalid JSON format");
+    }
+  }
+
   async function handleSendSingleRequest() {
     setLoading(true);
     setResponse(null);
@@ -756,23 +829,32 @@ export default function App() {
     URL.revokeObjectURL(href);
   }
 
+  const filteredRuns = testRuns.filter((r) => {
+    if (!historySearch.trim()) return true;
+    const q = historySearch.toLowerCase();
+    return (
+      r.url?.toLowerCase().includes(q) ||
+      r.method?.toLowerCase().includes(q) ||
+      String(r.id).includes(q)
+    );
+  });
+
   return (
     <div className="app-container">
       <header className="app-header">
         <div className="brand">
           <div className="brand-icon">⚡</div>
           <div>
-            <h1>API Performance & Load Tester</h1>
+            <h1>PulseAPI Platform</h1>
             <div className="brand-subtitle">
-              High-throughput benchmark engine, statistical analyzer & workflow runner
+              High-Throughput Load Tester, Statistical Latency Analyzer & Diagnostics
             </div>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <div className="header-actions">
           <button
             className="btn-secondary"
-            style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
             onClick={() => {
               setImportInput("");
               setImportError("");
@@ -781,7 +863,7 @@ export default function App() {
             }}
           >
             <span>📥</span>
-            <span>Import (cURL / Swagger / Postman)</span>
+            <span>Import API (cURL / Swagger / Postman)</span>
           </button>
 
           <div className="ws-status">
@@ -791,11 +873,24 @@ export default function App() {
         </div>
       </header>
 
+      <div className="presets-bar">
+        <span className="presets-label">⚡ Quick Presets:</span>
+        {PRESETS.map((p, i) => (
+          <button
+            key={i}
+            className="preset-chip"
+            onClick={() => handleLoadPreset(p)}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+
       <nav className="nav-tabs">
         {[
+          { id: "load", label: "Load Benchmark", icon: "🚀" },
           { id: "single", label: "Single Request", icon: "🎯" },
-          { id: "load", label: "Load Test", icon: "🚀" },
-          { id: "scaling", label: "Scaling Test", icon: "📈" },
+          { id: "scaling", label: "Scaling Matrix", icon: "📈" },
           { id: "workflow", label: "Workflow Chain", icon: "🔗" },
           { id: "compare", label: "Compare Runs", icon: "⚖️" },
           { id: "history", label: "History & Logs", icon: "📜" },
@@ -821,13 +916,13 @@ export default function App() {
           <div className="card-title">
             <span>
               {mode === "single"
-                ? "Send Individual Request"
+                ? "Individual Request Inspector"
                 : mode === "load"
-                ? "Concurrent Load Test Configuration"
-                : "Concurrency Scaling Benchmark"}
+                ? "Concurrent Load Test Engine"
+                : "Stepped Concurrency Scaling Benchmark"}
             </span>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
-              {mode === "load" && `Target: ${totalRequests} requests @ ${concurrency} concurrent ${useMultiCore ? `(${workerCount} worker threads)` : ""}`}
+            <span style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+              {mode === "load" && `${totalRequests} reqs @ ${concurrency} VUs ${useMultiCore ? `(${workerCount} threads)` : ""}`}
             </span>
           </div>
 
@@ -868,7 +963,7 @@ export default function App() {
                 onClick={handleRunLoadTest}
                 disabled={loading || !url.trim()}
               >
-                {loading ? `Testing... (${progress.completed}/${progress.total})` : "Start Load Test"}
+                {loading ? `Testing (${progress.completed}/${progress.total})...` : "Launch Load Test"}
               </button>
             )}
 
@@ -878,16 +973,16 @@ export default function App() {
                 onClick={handleRunScalingTest}
                 disabled={scalingLoading || !url.trim()}
               >
-                {scalingLoading ? "Running Scaling Matrix..." : "Start Scaling Test"}
+                {scalingLoading ? "Testing Matrix..." : "Launch Scaling Test"}
               </button>
             )}
           </div>
 
           {mode === "load" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", marginTop: "0.75rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", marginTop: "0.25rem" }}>
               <div className="options-row">
                 <div className="option-group">
-                  <label>Concurrency (VUs):</label>
+                  <label>Virtual Users (VUs):</label>
                   <input
                     type="number"
                     min="1"
@@ -905,7 +1000,7 @@ export default function App() {
                     min="1"
                     max="50000"
                     className="option-input"
-                    style={{ width: "90px" }}
+                    style={{ width: "95px" }}
                     value={totalRequests}
                     onChange={(e) => setTotalRequests(Number(e.target.value))}
                   />
@@ -918,14 +1013,14 @@ export default function App() {
                     min="500"
                     step="500"
                     className="option-input"
-                    style={{ width: "90px" }}
+                    style={{ width: "95px" }}
                     value={timeout}
                     onChange={(e) => setTimeoutVal(Number(e.target.value))}
                   />
                 </div>
 
-                <div className="option-group" style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
+                <div className="option-group" style={{ flexDirection: "row", alignItems: "center", gap: "0.6rem", marginTop: "auto" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}>
                     <input
                       type="checkbox"
                       checked={useMultiCore}
@@ -938,12 +1033,12 @@ export default function App() {
                       value={workerCount}
                       onChange={(e) => setWorkerCount(Number(e.target.value))}
                       className="option-input"
-                      style={{ padding: "0.2rem 0.4rem" }}
+                      style={{ padding: "0.25rem 0.5rem" }}
                     >
-                      <option value="2">2 Threads</option>
-                      <option value="4">4 Threads</option>
-                      <option value="8">8 Threads</option>
-                      <option value="16">16 Threads</option>
+                      <option value="2">2 Worker Threads</option>
+                      <option value="4">4 Worker Threads</option>
+                      <option value="8">8 Worker Threads</option>
+                      <option value="16">16 Worker Threads</option>
                     </select>
                   )}
                 </div>
@@ -951,7 +1046,7 @@ export default function App() {
 
               <div className="budget-collapsible">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: 700, fontSize: "0.875rem" }}>
                     <input
                       type="checkbox"
                       checked={enableSlaBudget}
@@ -959,15 +1054,15 @@ export default function App() {
                     />
                     <span>🎯 Enforce SLA Performance Budget & Assertions</span>
                   </label>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
-                    {enableSlaBudget ? "SLA Rules Active" : "Disabled"}
+                  <span style={{ fontSize: "0.75rem", color: enableSlaBudget ? "var(--accent)" : "var(--text-dim)", fontWeight: 600 }}>
+                    {enableSlaBudget ? "Active Evaluation" : "Disabled"}
                   </span>
                 </div>
 
                 {enableSlaBudget && (
                   <div className="budget-inputs-grid">
                     <div className="option-group">
-                      <label>Target P95 Latency (ms):</label>
+                      <label>Target P95 (ms):</label>
                       <input
                         type="number"
                         min="10"
@@ -977,7 +1072,7 @@ export default function App() {
                       />
                     </div>
                     <div className="option-group">
-                      <label>Target P99 Latency (ms):</label>
+                      <label>Target P99 (ms):</label>
                       <input
                         type="number"
                         min="10"
@@ -1019,10 +1114,10 @@ export default function App() {
           {mode === "scaling" && (
             <div className="options-row">
               <div className="option-group">
-                <label>Concurrency Levels:</label>
+                <label>Concurrency Matrix Levels:</label>
                 <input
                   type="text"
-                  style={{ width: "180px" }}
+                  style={{ width: "200px" }}
                   value={scalingLevels}
                   onChange={(e) => setScalingLevels(e.target.value)}
                   placeholder="1, 5, 10, 25"
@@ -1035,7 +1130,7 @@ export default function App() {
                   type="number"
                   min="1"
                   className="option-input"
-                  style={{ width: "90px" }}
+                  style={{ width: "95px" }}
                   value={scalingReqs}
                   onChange={(e) => setScalingReqs(Number(e.target.value))}
                 />
@@ -1048,7 +1143,7 @@ export default function App() {
                   min="500"
                   step="500"
                   className="option-input"
-                  style={{ width: "90px" }}
+                  style={{ width: "95px" }}
                   value={timeout}
                   onChange={(e) => setTimeoutVal(Number(e.target.value))}
                 />
@@ -1056,19 +1151,32 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ marginTop: "1rem" }}>
-            <div className="sub-tabs">
+          <div style={{ marginTop: "0.75rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="sub-tabs">
+                <button
+                  className={`sub-tab ${activeSubTab === "headers" ? "active" : ""}`}
+                  onClick={() => setActiveSubTab("headers")}
+                >
+                  Headers (JSON)
+                </button>
+                <button
+                  className={`sub-tab ${activeSubTab === "body" ? "active" : ""}`}
+                  onClick={() => setActiveSubTab("body")}
+                >
+                  Request Body (JSON)
+                </button>
+              </div>
+
               <button
-                className={`sub-tab ${activeSubTab === "headers" ? "active" : ""}`}
-                onClick={() => setActiveSubTab("headers")}
+                className="btn-secondary"
+                style={{ padding: "0.25rem 0.65rem", fontSize: "0.75rem" }}
+                onClick={() => {
+                  if (activeSubTab === "headers") prettyPrintJson(headers, setHeaders);
+                  else prettyPrintJson(body, setBody);
+                }}
               >
-                Headers (JSON)
-              </button>
-              <button
-                className={`sub-tab ${activeSubTab === "body" ? "active" : ""}`}
-                onClick={() => setActiveSubTab("body")}
-              >
-                Request Body (JSON)
+                ✨ Format JSON
               </button>
             </div>
 
@@ -1097,9 +1205,9 @@ export default function App() {
         <section className="card">
           <div className="progress-container">
             <div className="progress-labels">
-              <span>Executing Concurrent Requests...</span>
-              <span>
-                {progress.completed} / {progress.total} (
+              <span>🚀 Dispatching Concurrent Virtual User Load...</span>
+              <span style={{ fontFamily: "var(--font-mono)" }}>
+                {progress.completed} / {progress.total} requests (
                 {Math.round((progress.completed / (progress.total || 1)) * 100)}%)
               </span>
             </div>
@@ -1121,7 +1229,7 @@ export default function App() {
             <span>Response Inspector</span>
             <div className="response-header">
               <StatusBadge status={response.status} />
-              <span style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>
+              <span style={{ fontSize: "0.85rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
                 Latency: <strong>{response.durationMs}ms</strong>
               </span>
             </div>
@@ -1184,11 +1292,11 @@ export default function App() {
       {mode === "load" && response && response.metrics && (
         <section className="card">
           <div className="card-title">
-            <span>Load Test Benchmark Results</span>
+            <span>Load Benchmark Analytics Dashboard</span>
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
               <button
                 className="btn-primary"
-                style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+                style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
                 onClick={() =>
                   generateExecutivePdfReport({
                     run: { url, method, concurrency, total_requests: totalRequests },
@@ -1243,8 +1351,8 @@ export default function App() {
 
           {response.insights && response.insights.length > 0 && (
             <div>
-              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
-                Rule-Based Performance & Root-Cause Diagnostics
+              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 700 }}>
+                Performance Intelligence & Root-Cause Diagnostics
               </div>
               <InsightsList insights={response.insights} />
             </div>
@@ -1265,7 +1373,7 @@ export default function App() {
             <span>Scaling Matrix Results (Group #{scalingResult.scalingGroupId})</span>
             <button
               className="btn-primary"
-              style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+              style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
               onClick={() =>
                 generateExecutivePdfReport({
                   run: { url, method, concurrency: "Stepped Matrix", total_requests: scalingReqs * scalingResult.runs.length },
@@ -1298,12 +1406,18 @@ export default function App() {
                   <td>
                     <strong>{r.concurrency} VUs</strong>
                   </td>
-                  <td>{r.metrics.avgMs}ms</td>
-                  <td>{r.metrics.p50}ms</td>
-                  <td>{r.metrics.p95}ms</td>
-                  <td>{r.metrics.p99}ms</td>
-                  <td style={{ color: "var(--success)" }}>{r.metrics.throughputRps} rps</td>
-                  <td>{r.metrics.successRate}%</td>
+                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.avgMs}ms</td>
+                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.p50}ms</td>
+                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.p95}ms</td>
+                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.p99}ms</td>
+                  <td style={{ color: "var(--success)", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+                    {r.metrics.throughputRps} rps
+                  </td>
+                  <td>
+                    <span className={r.metrics.successRate >= 99 ? "badge badge-2xx" : "badge badge-4xx"}>
+                      {r.metrics.successRate}%
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1311,7 +1425,7 @@ export default function App() {
 
           {scalingResult.insights && scalingResult.insights.length > 0 && (
             <div style={{ marginTop: "1rem" }}>
-              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 700 }}>
                 Sweet Spot & Capacity Saturation Analysis
               </div>
               <InsightsList insights={scalingResult.insights} />
@@ -1478,8 +1592,8 @@ export default function App() {
                         <td>
                           <strong>{metric}</strong>
                         </td>
-                        <td>{diff.before}</td>
-                        <td>{diff.after}</td>
+                        <td style={{ fontFamily: "var(--font-mono)" }}>{diff.before}</td>
+                        <td style={{ fontFamily: "var(--font-mono)" }}>{diff.after}</td>
                         <td style={{ fontFamily: "var(--font-mono)" }}>
                           {diff.diff > 0 ? `+${diff.diff}` : diff.diff}
                         </td>
@@ -1514,57 +1628,67 @@ export default function App() {
       {mode === "history" && (
         <section className="card">
           <div className="card-title">
-            <span>Historical Test Runs</span>
-            {testRuns.length > 0 && (
-              <button
-                className="btn-danger"
-                style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
-                onClick={handleClearAllRuns}
-              >
-                Clear History
-              </button>
-            )}
+            <span>Historical Test Run Records</span>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <input
+                type="text"
+                placeholder="Search history by URL or ID..."
+                className="option-input"
+                style={{ width: "220px" }}
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+              />
+              {testRuns.length > 0 && (
+                <button
+                  className="btn-danger"
+                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem" }}
+                  onClick={handleClearAllRuns}
+                >
+                  Clear History
+                </button>
+              )}
+            </div>
           </div>
 
-          {testRuns.length === 0 ? (
-            <div style={{ color: "var(--text-dim)", textAlign: "center", padding: "2rem" }}>
-              No test runs recorded yet. Execute a Load Test to persist runs here.
+          {filteredRuns.length === 0 ? (
+            <div style={{ color: "var(--text-dim)", textAlign: "center", padding: "2.5rem" }}>
+              No test runs recorded matching your search. Execute a Load Test to persist runs here.
             </div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Method & URL</th>
-                  <th>Concurrency</th>
-                  <th>Requests</th>
+                  <th>Method & Target URL</th>
+                  <th>VUs</th>
+                  <th>Total Reqs</th>
                   <th>Avg Latency</th>
-                  <th>P95 Latency</th>
+                  <th>P95</th>
                   <th>Throughput</th>
                   <th>Success Rate</th>
-                  <th>Timestamp</th>
+                  <th>Recorded At</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {testRuns.map((r) => (
+                {filteredRuns.map((r) => (
                   <tr
                     key={r.id}
                     className="clickable"
                     onClick={() => fetchRunDetail(r.id)}
                   >
-                    <td>#{r.id}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>#{r.id}</td>
                     <td style={{ fontFamily: "var(--font-mono)" }}>
-                      <span className={`method-${r.method}`} style={{ fontWeight: 700, marginRight: "0.5rem" }}>
+                      <span className={`method-${r.method}`} style={{ fontWeight: 800, marginRight: "0.5rem" }}>
                         {r.method}
                       </span>
                       {r.url}
                     </td>
                     <td>{r.concurrency} VUs</td>
                     <td>{r.total_requests}</td>
-                    <td>{r.avg_ms}ms</td>
-                    <td>{r.p95}ms</td>
-                    <td>{r.throughput_rps} rps</td>
+                    <td style={{ fontFamily: "var(--font-mono)" }}>{r.avg_ms}ms</td>
+                    <td style={{ fontFamily: "var(--font-mono)" }}>{r.p95}ms</td>
+                    <td style={{ fontFamily: "var(--font-mono)", color: "var(--success)" }}>{r.throughput_rps} rps</td>
                     <td>
                       <span className={r.success_rate >= 99 ? "badge badge-2xx" : "badge badge-4xx"}>
                         {r.success_rate}%
@@ -1576,7 +1700,7 @@ export default function App() {
                     <td>
                       <button
                         className="btn-danger"
-                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
                         onClick={(e) => handleDeleteRun(e, r.id)}
                       >
                         Delete
@@ -1601,7 +1725,7 @@ export default function App() {
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button
                   className="btn-primary"
-                  style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
                   onClick={() =>
                     generateExecutivePdfReport({
                       run: selectedRunDetail.run,
@@ -1651,6 +1775,8 @@ export default function App() {
               />
             </div>
 
+            {selectedRunDetail.slaVerdict && <SlaVerdictCard slaVerdict={selectedRunDetail.slaVerdict} />}
+
             {selectedRunDetail.apdex && <ApdexCard apdex={selectedRunDetail.apdex} />}
 
             {selectedRunDetail.insights && (
@@ -1661,7 +1787,7 @@ export default function App() {
               <>
                 <LatencyChart results={selectedRunDetail.requests} />
                 <div style={{ marginTop: "1rem" }}>
-                  <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                  <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 700 }}>
                     Request Logs ({selectedRunDetail.requests.length} requests recorded)
                   </div>
                   <div style={{ maxHeight: "250px", overflowY: "auto" }}>
@@ -1737,7 +1863,7 @@ export default function App() {
             {parsedEndpoints.length > 0 && (
               <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
                     Extracted Endpoints ({parsedEndpoints.length} routes found)
                   </div>
                   <button className="btn-secondary" onClick={handleImportAsWorkflow}>
@@ -1749,24 +1875,24 @@ export default function App() {
                   {parsedEndpoints.map((ep, idx) => (
                     <div key={idx} className="endpoint-picker-item">
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        <span className={`method-${ep.method}`} style={{ fontWeight: 700, fontSize: "0.8rem" }}>
+                        <span className={`method-${ep.method}`} style={{ fontWeight: 800, fontSize: "0.8rem" }}>
                           {ep.method}
                         </span>
-                        <span style={{ fontSize: "0.8rem", color: "var(--text-main)" }}>
+                        <span style={{ fontSize: "0.8rem", color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
                           {ep.url}
                         </span>
                       </div>
                       <div style={{ display: "flex", gap: "0.4rem" }}>
                         <button
                           className="btn-secondary"
-                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                          style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
                           onClick={() => handleSelectImportedEndpoint(ep, "single")}
                         >
                           Single Request
                         </button>
                         <button
                           className="btn-primary"
-                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                          style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
                           onClick={() => handleSelectImportedEndpoint(ep, "load")}
                         >
                           Load Test
