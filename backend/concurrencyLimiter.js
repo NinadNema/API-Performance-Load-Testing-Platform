@@ -7,7 +7,7 @@ class ConcurrencyLimiter {
 
   run(taskFn) {
     return new Promise((resolve, reject) => {
-      const attempt = () => {
+      const attempt = async () => {
         if (this.active >= this.maxConcurrent) {
           this.queue.push(attempt);
           return;
@@ -15,16 +15,18 @@ class ConcurrencyLimiter {
 
         this.active++;
 
-        Promise.resolve()
-          .then(() => taskFn())
-          .then(resolve, reject)
-          .finally(() => {
-            this.active--;
-            if (this.queue.length > 0) {
-              const next = this.queue.shift();
-              next();
-            }
-          });
+        try {
+          const res = await taskFn();
+          resolve(res);
+        } catch (err) {
+          reject(err);
+        } finally {
+          this.active--;
+          if (this.queue.length > 0) {
+            const next = this.queue.shift();
+            next();
+          }
+        }
       };
 
       attempt();
