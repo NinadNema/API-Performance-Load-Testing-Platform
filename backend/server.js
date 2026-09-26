@@ -1,66 +1,101 @@
 const express = require("express");
 const cors = require("cors");
+const axios = require("axios");
+const { WebSocketServer } = require('ws');
 const runLoadTest = require("./loadTestRunner");
 const calculateMetrics = require("./metrics");
 const saveTestRun = require("./saveTestRun");
-const { generateInsights, generateScalingInsights } = require('./insights');
-const axios = require("axios");
+const { generateInsights, generateScalingInsights, calculateApdex } = require('./insights');
 const db = require('./db');
 const compareRuns = require('./compareRuns');
 const runScalingTest = require('./scalingTest');
-const { WebSocketServer } = require('ws');
 const { runWorkflow } = require('./workflow');
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+let clients = [];
+function broadcast(data) {
+  const message = JSON.stringify(data);
+  clients = clients.filter((client) => {
+    if (client.readyState === 1) {
+      try {
+        client.send(message);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return client.readyState !== 3;
+  });
+}
+
 app.post("/api/load-test", async (req, res) => {
-  const { url, method = "GET", concurrency, totalRequests } = req.body;
+  const {
+    url,
+    method = "GET",
+    concurrency = 5,
+    totalRequests = 20,
+    headers = {},
+    body = null,
+    timeout = 10000,
+  } = req.body;
 
   if (!url) {
     return res.status(400).json({ success: false, error: "url is required" });
   }
 
-  if (!concurrency || concurrency < 1) {
+  const numConcurrency = Number(concurrency);
+  if (!numConcurrency || numConcurrency < 1 || numConcurrency > 500) {
     return res
       .status(400)
-      .json({ success: false, error: "concurrency must be at least 1" });
+      .json({ success: false, error: "concurrency must be between 1 and 500" });
   }
 
-  if (!totalRequests || totalRequests < 1) {
+  const numTotal = Number(totalRequests);
+  if (!numTotal || numTotal < 1 || numTotal > 50000) {
     return res
       .status(400)
-      .json({ success: false, error: "totalRequests must be at least 1" });
+      .json({ success: false, error: "totalRequests must be between 1 and 50000" });
   }
 
   try {
+    let lastBroadcastTime = 0;
     const start = performance.now();
     const results = await runLoadTest({
       url,
       method,
-      concurrency,
-      totalRequests,
+      concurrency: numConcurrency,
+      totalRequests: numTotal,
+      headers,
+      body,
+      timeout: Number(timeout) || 10000,
       onProgress: (result, completed, total) => {
-        broadcast({ type: 'progress', result, completed, total });
+        const now = Date.now();
+        if (completed === total || now - lastBroadcastTime > 40) {
+          lastBroadcastTime = now;
+          broadcast({ type: 'progress', result, completed, total });
+        }
       },
     });
 
     const totalDurationMs = performance.now() - start;
 
     const metrics = calculateMetrics(results, totalDurationMs);
-    const insights = generateInsights(metrics);
+    const apdex = calculateApdex(results, metrics.p50 > 0 ? Math.max(100, Math.round(metrics.p50 * 1.5)) : 250);
+    const insights = generateInsights(metrics, null, results);
 
     const testRunId = saveTestRun({
       url,
       method,
-      concurrency,
-      totalRequests,
+      concurrency: numConcurrency,
+      totalRequests: numTotal,
       totalDurationMs: Math.round(totalDurationMs),
       metrics,
       results,
@@ -71,6 +106,7 @@ app.post("/api/load-test", async (req, res) => {
       testRunId,
       totalDurationMs: Math.round(totalDurationMs),
       metrics,
+      apdex,
       insights,
       results,
     });
@@ -80,7 +116,7 @@ app.post("/api/load-test", async (req, res) => {
 });
 
 app.post("/api/request", async (req, res) => {
-  const { method = "GET", url, headers = {}, body } = req.body;
+  const { method = "GET", url, headers = {}, body, timeout = 10000 } = req.body;
 
   if (!url) {
     return res.status(400).json({ success: false, error: "url is required" });
@@ -94,7 +130,7 @@ app.post("/api/request", async (req, res) => {
       url,
       headers,
       data: body,
-      timeout: 10000,
+      timeout: Number(timeout) || 10000,
       validateStatus: () => true,
     });
 
@@ -121,17 +157,73 @@ app.post("/api/request", async (req, res) => {
 });
 
 app.get('/api/test-runs', (req, res) => {
-  const runs = db.prepare('SELECT * FROM test_runs ORDER BY created_at DESC').all();
-  res.json({ success: true, runs });
+  try {
+    const runs = db.prepare('SELECT * FROM test_runs ORDER BY id DESC').all();
+    res.json({ success: true, runs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/test-runs/:id', (req, res) => {
-  const run = db.prepare('SELECT * FROM test_runs WHERE id = ?').get(req.params.id);
-  if (!run) {
-    return res.status(404).json({ success: false, error: 'Test run not found' });
+  try {
+    const run = db.prepare('SELECT * FROM test_runs WHERE id = ?').get(req.params.id);
+    if (!run) {
+      return res.status(404).json({ success: false, error: 'Test run not found' });
+    }
+    const mappedRequests = requests.map((r) => ({
+      requestIndex: r.request_index,
+      durationMs: r.duration_ms,
+      status: r.status,
+      success: Boolean(r.success),
+    }));
+
+    const metrics = {
+      totalRequests: run.total_requests,
+      avgMs: run.avg_ms,
+      minMs: run.min_ms,
+      maxMs: run.max_ms,
+      p50: run.p50,
+      p95: run.p95,
+      p99: run.p99,
+      successRate: run.success_rate,
+      throughputRps: run.throughput_rps,
+    };
+    const apdex = calculateApdex(mappedRequests, metrics.p50 > 0 ? Math.max(100, Math.round(metrics.p50 * 1.5)) : 250);
+    const insights = generateInsights(metrics, null, mappedRequests);
+
+    res.json({ success: true, run, requests, metrics, apdex, insights });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
-  const requests = db.prepare('SELECT * FROM requests WHERE test_run_id = ?').all(req.params.id);
-  res.json({ success: true, run, requests });
+});
+
+app.delete('/api/test-runs/:id', (req, res) => {
+  try {
+    const deleteReqs = db.prepare('DELETE FROM requests WHERE test_run_id = ?');
+    const deleteRun = db.prepare('DELETE FROM test_runs WHERE id = ?');
+
+    db.transaction(() => {
+      deleteReqs.run(req.params.id);
+      deleteRun.run(req.params.id);
+    })();
+
+    res.json({ success: true, message: 'Test run deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/test-runs', (req, res) => {
+  try {
+    db.transaction(() => {
+      db.prepare('DELETE FROM requests').run();
+      db.prepare('DELETE FROM test_runs').run();
+    })();
+    res.json({ success: true, message: 'All test runs cleared' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/compare', (req, res) => {
@@ -151,7 +243,15 @@ app.get('/api/compare', (req, res) => {
 });
 
 app.post('/api/scaling-test', async (req, res) => {
-  const { url, method = 'GET', totalRequestsPerLevel, concurrencyLevels } = req.body;
+  const {
+    url,
+    method = 'GET',
+    totalRequestsPerLevel,
+    concurrencyLevels,
+    headers = {},
+    body = null,
+    timeout = 10000,
+  } = req.body;
 
   if (!url) {
     return res.status(400).json({ success: false, error: 'url is required' });
@@ -164,7 +264,15 @@ app.post('/api/scaling-test', async (req, res) => {
   }
 
   try {
-    const result = await runScalingTest({ url, method, totalRequestsPerLevel, concurrencyLevels });
+    const result = await runScalingTest({
+      url,
+      method,
+      totalRequestsPerLevel,
+      concurrencyLevels,
+      headers,
+      body,
+      timeout,
+    });
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -179,7 +287,6 @@ app.get('/api/scaling-test/:groupId', (req, res) => {
   const insights = generateScalingInsights(runs);
   res.json({ success: true, scalingGroupId: req.params.groupId, runs, insights });
 });
-
 
 app.post('/api/workflow', async (req, res) => {
   const { steps } = req.body;
@@ -198,26 +305,17 @@ app.post('/api/workflow', async (req, res) => {
 
 const wss = new WebSocketServer({ port: 4001 });
 
-let clients = [];
-
 wss.on('connection', (ws) => {
-  console.log('Frontend connected via WebSocket');
   clients.push(ws);
+
+  ws.on('error', (err) => {
+    console.error('WebSocket client error:', err.message);
+  });
 
   ws.on('close', () => {
     clients = clients.filter((c) => c !== ws);
-    console.log('Frontend disconnected');
   });
 });
-
-function broadcast(data) {
-  const message = JSON.stringify(data);
-  clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(message);
-    }
-  });
-}
 
 const PORT = 4000;
 app.listen(PORT, () => {

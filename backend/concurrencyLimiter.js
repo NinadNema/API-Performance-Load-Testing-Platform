@@ -1,6 +1,6 @@
 class ConcurrencyLimiter {
   constructor(maxConcurrent) {
-    this.maxConcurrent = maxConcurrent;
+    this.maxConcurrent = Math.max(1, Number(maxConcurrent) || 1);
     this.active = 0;
     this.queue = [];
   }
@@ -15,7 +15,8 @@ class ConcurrencyLimiter {
 
         this.active++;
 
-        taskFn()
+        Promise.resolve()
+          .then(() => taskFn())
           .then(resolve, reject)
           .finally(() => {
             this.active--;

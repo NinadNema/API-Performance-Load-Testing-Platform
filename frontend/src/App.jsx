@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LineChart,
   Line,
@@ -11,259 +10,492 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import "./App.css";
 
-function MetricCard({ label, value }) {
+function MetricCard({ label, value, highlight = false, unit = "" }) {
+  return (
+    <div className="metric-card">
+      <span className="metric-label">{label}</span>
+      <span className={`metric-value ${highlight ? "highlight" : ""}`}>
+        {value ?? "—"}{unit}
+      </span>
+    </div>
+  );
+}
+
+function getCategoryIcon(insight) {
+  if (insight.category === "rate_limit") return "🛑";
+  if (insight.category === "gateway_failure") return "⏱️";
+  if (insight.category === "server_exception") return "💥";
+  if (insight.category === "auth_failure") return "🔒";
+  if (insight.category === "network_timeout") return "📡";
+  if (insight.category === "cold_start") return "❄️";
+  if (insight.category === "high_jitter") return "〰️";
+  if (insight.category === "bimodal_distribution") return "🔀";
+  if (insight.category === "sweet_spot") return "🎯";
+  if (insight.category === "saturation_point") return "🧱";
+  if (insight.category === "scaling_efficiency") return "⚡";
+  if (insight.category === "throughput_collapse") return "📉";
+  if (insight.category?.startsWith("apdex")) return "⭐";
+  if (insight.level === "error") return "🚨";
+  if (insight.level === "warning") return "⚠️";
+  if (insight.level === "info") return "ℹ️";
+  return "✅";
+}
+
+function InsightsList({ insights }) {
+  if (!insights || insights.length === 0) return null;
+
+  return (
+    <div className="insights-list">
+      {insights.map((insight, idx) => (
+        <div key={idx} className={`insight-item ${insight.level}`}>
+          <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>
+            {getCategoryIcon(insight)}
+          </span>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>
+                {insight.category
+                  ? insight.category.replace(/_/g, " ").toUpperCase()
+                  : insight.level === "error"
+                  ? "ISSUE DETECTED"
+                  : insight.level === "warning"
+                  ? "WARNING"
+                  : "OPTIMAL"}
+              </strong>
+              <span className={`badge badge-${insight.level === 'error' ? '5xx' : insight.level === 'warning' ? '4xx' : '2xx'}`}>
+                {insight.level.toUpperCase()}
+              </span>
+            </div>
+            <p style={{ marginTop: "0.25rem", color: "inherit", opacity: 0.95 }}>
+              {insight.message}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ApdexCard({ apdex }) {
+  if (!apdex) return null;
+  const ratingBadge =
+    apdex.rating === "Excellent" || apdex.rating === "Good"
+      ? "badge-2xx"
+      : apdex.rating === "Fair"
+      ? "badge-3xx"
+      : "badge-5xx";
+
   return (
     <div
       style={{
-        background: "#1a1a1a",
-        padding: "1rem",
-        borderRadius: "6px",
-        minWidth: "110px",
-        textAlign: "center",
+        background: "var(--bg-input)",
+        border: "1px solid var(--border-color)",
+        borderRadius: "var(--radius-md)",
+        padding: "0.9rem 1.25rem",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "0.75rem",
       }}
     >
-      <div style={{ fontSize: "0.75rem", color: "#999" }}>{label}</div>
-      <div style={{ fontSize: "1.4rem", fontWeight: "bold", color: "#eee" }}>
-        {value}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <span style={{ fontSize: "1.5rem" }}>⭐</span>
+        <div>
+          <div style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 600 }}>
+            Apdex User Experience Score (T = {apdex.targetLatencyMs}ms)
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.15rem" }}>
+            <span style={{ fontSize: "1.25rem", fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
+              {apdex.score}
+            </span>
+            <span className={`badge ${ratingBadge}`}>{apdex.rating}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+        <span>😊 Satisfied (≤{apdex.targetLatencyMs}ms): <strong style={{ color: "#34d399" }}>{apdex.satisfied}</strong></span>
+        <span>😐 Tolerating (≤{apdex.targetLatencyMs * 4}ms): <strong style={{ color: "#fbbf24" }}>{apdex.tolerating}</strong></span>
+        <span>😞 Frustrated: <strong style={{ color: "#f87171" }}>{apdex.frustrated}</strong></span>
       </div>
     </div>
   );
 }
 
 function LatencyChart({ results }) {
+  if (!results || results.length === 0) return null;
+
   const chartData = [...results]
     .sort((a, b) => a.requestIndex - b.requestIndex)
-    .map((r) => ({ request: r.requestIndex, latency: r.durationMs }));
+    .map((r) => ({
+      request: `#${(r.requestIndex ?? 0) + 1}`,
+      latency: r.durationMs ?? 0,
+      status: r.status ?? "ERR",
+    }));
 
   return (
-    <div style={{ width: "100%", height: 300, marginTop: "1.5rem" }}>
-      <ResponsiveContainer>
-        <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-          <XAxis
-            dataKey="request"
-            stroke="#999"
-            label={{
-              value: "Request #",
-              position: "insideBottom",
-              offset: -5,
-              fill: "#999",
-            }}
-          />
-          <YAxis
-            stroke="#999"
-            label={{
-              value: "Latency (ms)",
-              angle: -90,
-              position: "insideLeft",
-              fill: "#999",
-            }}
-          />
-          <Tooltip
-            contentStyle={{ background: "#1a1a1a", border: "1px solid #444" }}
-          />
-          <Line
-            type="monotone"
-            dataKey="latency"
-            stroke="#4fc3f7"
-            dot={{ r: 2 }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="chart-wrapper">
+      <div style={{ marginBottom: "0.75rem", fontSize: "0.875rem", fontWeight: 600 }}>
+        Request Latency Timeline (ms)
+      </div>
+      <div style={{ width: "100%", height: 280 }}>
+        <ResponsiveContainer>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#23304a" />
+            <XAxis dataKey="request" stroke="#64748b" tick={{ fontSize: 11 }} />
+            <YAxis stroke="#64748b" tick={{ fontSize: 11 }} unit="ms" />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "#111827",
+                borderColor: "#334155",
+                borderRadius: "8px",
+                color: "#f8fafc",
+                fontSize: "0.8rem",
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="latency"
+              stroke="#38bdf8"
+              strokeWidth={2}
+              dot={{ r: 2, fill: "#38bdf8" }}
+              activeDot={{ r: 5 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
 
 function StatusBreakdownChart({ results }) {
+  if (!results || results.length === 0) return null;
+
   const counts = {};
   for (const r of results) {
-    const key = r.status ?? "error";
+    const key = r.status ? String(r.status) : "Error / Timeout";
     counts[key] = (counts[key] || 0) + 1;
   }
 
   const chartData = Object.entries(counts).map(([status, count]) => ({
-    status: String(status),
+    status,
     count,
   }));
 
   return (
-    <div style={{ width: "100%", height: 250, marginTop: "1.5rem" }}>
-      <ResponsiveContainer>
-        <BarChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-          <XAxis dataKey="status" stroke="#999" />
-          <YAxis stroke="#999" allowDecimals={false} />
-          <Tooltip
-            contentStyle={{ background: "#1a1a1a", border: "1px solid #444" }}
-          />
-          <Bar dataKey="count" fill="#4fc3f7" />
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="chart-wrapper">
+      <div style={{ marginBottom: "0.75rem", fontSize: "0.875rem", fontWeight: 600 }}>
+        HTTP Status Code Breakdown
+      </div>
+      <div style={{ width: "100%", height: 220 }}>
+        <ResponsiveContainer>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#23304a" />
+            <XAxis dataKey="status" stroke="#64748b" tick={{ fontSize: 11 }} />
+            <YAxis stroke="#64748b" allowDecimals={false} tick={{ fontSize: 11 }} />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "#111827",
+                borderColor: "#334155",
+                borderRadius: "8px",
+                color: "#f8fafc",
+                fontSize: "0.8rem",
+              }}
+            />
+            <Bar dataKey="count" fill="#818cf8" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
 
 function ScalingChart({ runs }) {
+  if (!runs || runs.length === 0) return null;
+
   const chartData = [...runs]
     .sort((a, b) => a.concurrency - b.concurrency)
     .map((r) => ({
-      concurrency: r.concurrency,
-      p95: r.metrics.p95,
-      throughput: r.metrics.throughputRps,
+      concurrency: `VU ${r.concurrency}`,
+      p95: r.metrics?.p95 ?? r.p95 ?? 0,
+      throughput: r.metrics?.throughputRps ?? r.throughput_rps ?? 0,
     }));
 
   return (
-    <div style={{ width: "100%", height: 300, marginTop: "1.5rem" }}>
-      <ResponsiveContainer>
-        <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-          <XAxis
-            dataKey="concurrency"
-            stroke="#999"
-            label={{
-              value: "Concurrency",
-              position: "insideBottom",
-              offset: -5,
-              fill: "#999",
-            }}
-          />
-          <YAxis
-            yAxisId="left"
-            stroke="#4fc3f7"
-            label={{
-              value: "P95 (ms)",
-              angle: -90,
-              position: "insideLeft",
-              fill: "#4fc3f7",
-            }}
-          />
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            stroke="#81c784"
-            label={{
-              value: "Throughput (req/s)",
-              angle: 90,
-              position: "insideRight",
-              fill: "#81c784",
-            }}
-          />
-          <Tooltip
-            contentStyle={{ background: "#1a1a1a", border: "1px solid #444" }}
-          />
-          <Line
-            yAxisId="left"
-            type="monotone"
-            dataKey="p95"
-            stroke="#4fc3f7"
-            name="P95 (ms)"
-            dot={{ r: 3 }}
-          />
-          <Line
-            yAxisId="right"
-            type="monotone"
-            dataKey="throughput"
-            stroke="#81c784"
-            name="Throughput (req/s)"
-            dot={{ r: 3 }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="chart-wrapper">
+      <div style={{ marginBottom: "0.75rem", fontSize: "0.875rem", fontWeight: 600 }}>
+        Concurrency Scaling: P95 Latency vs Throughput
+      </div>
+      <div style={{ width: "100%", height: 300 }}>
+        <ResponsiveContainer>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#23304a" />
+            <XAxis dataKey="concurrency" stroke="#64748b" tick={{ fontSize: 11 }} />
+            <YAxis
+              yAxisId="left"
+              stroke="#38bdf8"
+              tick={{ fontSize: 11 }}
+              unit="ms"
+              label={{ value: "P95 Latency", angle: -90, position: "insideLeft", fill: "#38bdf8", fontSize: 12 }}
+            />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              stroke="#34d399"
+              tick={{ fontSize: 11 }}
+              unit=" rps"
+              label={{ value: "Throughput", angle: 90, position: "insideRight", fill: "#34d399", fontSize: 12 }}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "#111827",
+                borderColor: "#334155",
+                borderRadius: "8px",
+                color: "#f8fafc",
+                fontSize: "0.8rem",
+              }}
+            />
+            <Line
+              yAxisId="left"
+              type="monotone"
+              dataKey="p95"
+              name="P95 Latency (ms)"
+              stroke="#38bdf8"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+            />
+            <Line
+              yAxisId="right"
+              type="monotone"
+              dataKey="throughput"
+              name="Throughput (req/s)"
+              stroke="#34d399"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
 
-function App() {
-  const [method, setMethod] = useState("GET");
-  const [url, setUrl] = useState("");
-  const [response, setResponse] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [headers, setHeaders] = useState("{}");
-  const [body, setBody] = useState("");
-  const [progress, setProgress] = useState({ completed: 0, total: 0 });
-  const wsRef = useRef(null);
+function StatusBadge({ status }) {
+  if (!status) return <span className="badge badge-err">ERROR</span>;
+  if (status >= 200 && status < 300) return <span className="badge badge-2xx">{status} OK</span>;
+  if (status >= 300 && status < 400) return <span className="badge badge-3xx">{status} REDIRECT</span>;
+  if (status >= 400 && status < 500) return <span className="badge badge-4xx">{status} CLIENT ERR</span>;
+  return <span className="badge badge-5xx">{status} SERVER ERR</span>;
+}
+
+export default function App() {
   const [mode, setMode] = useState("single");
+  const [method, setMethod] = useState("GET");
+  const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/posts/1");
+  const [headers, setHeaders] = useState('{\n  "Content-Type": "application/json"\n}');
+  const [body, setBody] = useState("");
+  const [timeout, setTimeoutVal] = useState(10000);
+  const [activeSubTab, setActiveSubTab] = useState("headers");
+
+  // Load test state
   const [concurrency, setConcurrency] = useState(5);
   const [totalRequests, setTotalRequests] = useState(20);
+  const [progress, setProgress] = useState({ completed: 0, total: 0 });
+  const [loading, setLoading] = useState(false);
+  const [response, setResponse] = useState(null);
+  const [singleResponseTab, setSingleResponseTab] = useState("body");
+
+  // WebSocket state
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef(null);
+
+  // History state
   const [testRuns, setTestRuns] = useState([]);
+  const [selectedRunDetail, setSelectedRunDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // Compare state
   const [compareRunA, setCompareRunA] = useState("");
   const [compareRunB, setCompareRunB] = useState("");
   const [compareResult, setCompareResult] = useState(null);
-  const [scalingConcurrencyLevels, setScalingConcurrencyLevels] =
-    useState("1,5,10,25");
-  const [scalingRequestsPerLevel, setScalingRequestsPerLevel] = useState(20);
+  const [compareLoading, setCompareLoading] = useState(false);
+
+  // Scaling state
+  const [scalingLevels, setScalingLevels] = useState("1, 5, 10, 25");
+  const [scalingReqs, setScalingReqs] = useState(20);
   const [scalingResult, setScalingResult] = useState(null);
   const [scalingLoading, setScalingLoading] = useState(false);
+
+  // Workflow state
   const [workflowSteps, setWorkflowSteps] = useState(
-    `[
-  {
-    "name": "getPost",
-    "request": { "method": "GET", "url": "https://jsonplaceholder.typicode.com/posts/1" },
-    "extract": { "userId": "body.userId" }
-  },
-  {
-    "name": "getUser",
-    "request": { "method": "GET", "url": "https://jsonplaceholder.typicode.com/users/{{userId}}" }
-  }
-]`
+    JSON.stringify(
+      [
+        {
+          name: "Fetch Post",
+          request: {
+            method: "GET",
+            url: "https://jsonplaceholder.typicode.com/posts/1",
+          },
+          extract: {
+            userId: "body.userId",
+          },
+        },
+        {
+          name: "Fetch Post Author",
+          request: {
+            method: "GET",
+            url: "https://jsonplaceholder.typicode.com/users/{{userId}}",
+          },
+        },
+      ],
+      null,
+      2
+    )
   );
   const [workflowResult, setWorkflowResult] = useState(null);
   const [workflowLoading, setWorkflowLoading] = useState(false);
 
+  // WebSocket Connection with automatic reconnection
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:4001");
-    wsRef.current = ws;
+    let reconnectTimeout = null;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "progress") {
-        setProgress({ completed: data.completed, total: data.total });
-      }
+    function connectWs() {
+      const ws = new WebSocket("ws://localhost:4001");
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setWsConnected(true);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "progress") {
+            setProgress({ completed: data.completed, total: data.total });
+          }
+        } catch {
+          // ignore invalid json
+        }
+      };
+
+      ws.onclose = () => {
+        setWsConnected(false);
+        reconnectTimeout = setTimeout(connectWs, 3000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    connectWs();
+
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-
-    return () => ws.close();
   }, []);
 
   async function fetchTestRuns() {
     try {
       const res = await fetch("http://localhost:4000/api/test-runs");
       const data = await res.json();
-      if (data.success) setTestRuns(data.runs);
+      if (data.success) {
+        setTestRuns(data.runs || []);
+      }
     } catch (err) {
       console.error("Failed to fetch test runs:", err);
     }
   }
 
-  async function handleSend() {
-    setLoading(true);
-    setResponse(null);
-
-    let parseHeaders = {};
-    let parseBody = null;
-
+  async function handleViewRunDetail(runId) {
+    setDetailLoading(true);
+    setSelectedRunDetail(null);
     try {
-      parseHeaders = headers.trim() ? JSON.parse(headers) : {};
+      const res = await fetch(`http://localhost:4000/api/test-runs/${runId}`);
+      const data = await res.json();
+      if (data.success) {
+        setSelectedRunDetail(data);
+      }
     } catch (err) {
-      setResponse({
-        success: false,
-        error: "Header is not valid JSON: " + err.message,
+      console.error("Failed to fetch run detail:", err);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function handleDeleteRun(e, runId) {
+    e.stopPropagation();
+    if (!window.confirm(`Delete test run #${runId}?`)) return;
+    try {
+      const res = await fetch(`http://localhost:4000/api/test-runs/${runId}`, {
+        method: "DELETE",
       });
-      setLoading(false);
-      return;
+      const data = await res.json();
+      if (data.success) {
+        fetchTestRuns();
+        if (selectedRunDetail?.run?.id === runId) {
+          setSelectedRunDetail(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete run:", err);
+    }
+  }
+
+  async function handleClearAllHistory() {
+    if (!window.confirm("Are you sure you want to clear all test history?")) return;
+    try {
+      const res = await fetch("http://localhost:4000/api/test-runs", {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestRuns([]);
+        setSelectedRunDetail(null);
+      }
+    } catch (err) {
+      console.error("Failed to clear history:", err);
+    }
+  }
+
+  function parseJsonPayloads() {
+    let parsedHeaders = {};
+    let parsedBody = null;
+
+    if (headers.trim()) {
+      try {
+        parsedHeaders = JSON.parse(headers);
+      } catch (err) {
+        throw new Error("Headers must be valid JSON: " + err.message, { cause: err });
+      }
     }
 
     if (body.trim()) {
       try {
-        parseBody = JSON.parse(body);
+        parsedBody = JSON.parse(body);
       } catch (err) {
-        setResponse({
-          success: false,
-          error: "Body is not valid JSON: " + err.message,
-        });
-        setLoading(false);
-        return;
+        throw new Error("Body must be valid JSON: " + err.message, { cause: err });
       }
+    }
+
+    return { parsedHeaders, parsedBody };
+  }
+
+  async function handleSendSingleRequest() {
+    setLoading(true);
+    setResponse(null);
+
+    let payloads;
+    try {
+      payloads = parseJsonPayloads();
+    } catch (err) {
+      setResponse({ success: false, error: err.message });
+      setLoading(false);
+      return;
     }
 
     try {
@@ -272,12 +504,12 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           method,
-          url,
-          headers: parseHeaders,
-          body: parseBody,
+          url: url.trim(),
+          headers: payloads.parsedHeaders,
+          body: payloads.parsedBody,
+          timeout: Number(timeout) || 10000,
         }),
       });
-
       const data = await res.json();
       setResponse(data);
     } catch (err) {
@@ -292,11 +524,28 @@ function App() {
     setResponse(null);
     setProgress({ completed: 0, total: totalRequests });
 
+    let payloads;
+    try {
+      payloads = parseJsonPayloads();
+    } catch (err) {
+      setResponse({ success: false, error: err.message });
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("http://localhost:4000/api/load-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method, url, concurrency, totalRequests }),
+        body: JSON.stringify({
+          method,
+          url: url.trim(),
+          concurrency: Number(concurrency) || 1,
+          totalRequests: Number(totalRequests) || 1,
+          headers: payloads.parsedHeaders,
+          body: payloads.parsedBody,
+          timeout: Number(timeout) || 10000,
+        }),
       });
       const data = await res.json();
       setResponse(data);
@@ -309,19 +558,24 @@ function App() {
 
   async function handleCompare() {
     if (!compareRunA || !compareRunB) return;
+    setCompareLoading(true);
+    setCompareResult(null);
+
     try {
       const res = await fetch(
-        `http://localhost:4000/api/compare?runA=${compareRunA}&runB=${compareRunB}`,
+        `http://localhost:4000/api/compare?runA=${compareRunA}&runB=${compareRunB}`
       );
       const data = await res.json();
       setCompareResult(data);
     } catch (err) {
       setCompareResult({ success: false, error: err.message });
+    } finally {
+      setCompareLoading(false);
     }
   }
 
   async function handleRunScalingTest() {
-    const levels = scalingConcurrencyLevels
+    const levels = scalingLevels
       .split(",")
       .map((s) => Number(s.trim()))
       .filter((n) => !isNaN(n) && n > 0);
@@ -329,7 +583,7 @@ function App() {
     if (levels.length === 0) {
       setScalingResult({
         success: false,
-        error: "Enter valid comma-separated concurrency levels, e.g. 1,5,10,25",
+        error: "Enter valid comma-separated concurrency levels, e.g. 1, 5, 10, 25",
       });
       return;
     }
@@ -337,15 +591,27 @@ function App() {
     setScalingLoading(true);
     setScalingResult(null);
 
+    let payloads;
+    try {
+      payloads = parseJsonPayloads();
+    } catch (err) {
+      setScalingResult({ success: false, error: err.message });
+      setScalingLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("http://localhost:4000/api/scaling-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          url,
+          url: url.trim(),
           method,
-          totalRequestsPerLevel: scalingRequestsPerLevel,
+          totalRequestsPerLevel: Number(scalingReqs) || 20,
           concurrencyLevels: levels,
+          headers: payloads.parsedHeaders,
+          body: payloads.parsedBody,
+          timeout: Number(timeout) || 10000,
         }),
       });
       const data = await res.json();
@@ -364,7 +630,7 @@ function App() {
     } catch (err) {
       setWorkflowResult({
         success: false,
-        error: "Steps is not valid JSON: " + err.message,
+        error: "Workflow steps JSON is invalid: " + err.message,
       });
       return;
     }
@@ -372,7 +638,7 @@ function App() {
     if (!Array.isArray(steps) || steps.length === 0) {
       setWorkflowResult({
         success: false,
-        error: "Steps must be a non-empty array",
+        error: "Workflow steps must be a non-empty array",
       });
       return;
     }
@@ -395,536 +661,942 @@ function App() {
     }
   }
 
+  function exportResultsAsJson(data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `loadtest-run-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(href);
+  }
+
+  function exportResultsAsCsv(results) {
+    if (!results || results.length === 0) return;
+    const header = "RequestIndex,DurationMs,Status,Success,Error\n";
+    const rows = results
+      .map(
+        (r) =>
+          `${r.requestIndex ?? ""},${r.durationMs ?? ""},${r.status ?? ""},${
+            r.success ? "1" : "0"
+          },"${(r.error || "").replace(/"/g, '""')}"`
+      )
+      .join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `loadtest-requests-${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(href);
+  }
+
   return (
-    <div style={{ padding: "2em", maxWidth: "700px", margin: "0 auto" }}>
-      <h1>API Load Tester</h1>
-
-      <div style={{ marginBottom: "1rem" }}>
-        <button
-          onClick={() => {
-            setMode("single");
-            setResponse(null);
-          }}
-          disabled={mode === "single"}
-        >
-          Single Request
-        </button>
-        <button
-          onClick={() => {
-            setMode("load");
-            setResponse(null);
-          }}
-          disabled={mode === "load"}
-        >
-          Load Test
-        </button>
-        <button
-          onClick={() => {
-            setMode("history");
-            setResponse(null);
-            fetchTestRuns();
-          }}
-          disabled={mode === "history"}
-        >
-          History
-        </button>
-        <button
-          onClick={() => {
-            setMode("compare");
-            setResponse(null);
-            fetchTestRuns();
-          }}
-          disabled={mode === "compare"}
-        >
-          Compare
-        </button>
-        <button
-          onClick={() => {
-            setMode("scaling");
-            setResponse(null);
-            setScalingResult(null);
-          }}
-          disabled={mode === "scaling"}
-        >
-          Scaling Test
-        </button>
-        <button
-          onClick={() => {
-            setMode("workflow");
-            setResponse(null);
-            setWorkflowResult(null);
-          }}
-          disabled={mode === "workflow"}
-        >
-          Workflow
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <select value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value={"GET"}>GET</option>
-          <option value={"POST"}>POST</option>
-          <option value={"PUT"}>PUT</option>
-          <option value={"DELETE"}>DELETE</option>
-        </select>
-
-        <input
-          type="text"
-          placeholder="https://api.example.com/endpoint"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          style={{ flex: 1 }}
-        />
-
-        {mode === "load" && (
-          <>
-            <label>
-              Concurrency:
-              <input
-                type="number"
-                min="1"
-                value={concurrency}
-                onChange={(e) => setConcurrency(Number(e.target.value))}
-                style={{ width: "60px", marginLeft: "0.5rem" }}
-              />
-            </label>
-            <label>
-              Total Requests:
-              <input
-                type="number"
-                min="1"
-                value={totalRequests}
-                onChange={(e) => setTotalRequests(Number(e.target.value))}
-                style={{ width: "80px", marginLeft: "0.5rem" }}
-              />
-            </label>
-          </>
-        )}
-
-        {(mode === "single" || mode === "load") && (
-          <button
-            onClick={mode === "single" ? handleSend : handleRunLoadTest}
-            disabled={loading || !url}
-          >
-            {loading
-              ? mode === "load"
-                ? `Running... (${progress.completed}/${progress.total})`
-                : "Sending..."
-              : "Send"}
-          </button>
-        )}
-      </div>
-
-      <div>
-        {mode === "history" && (
+    <div className="app-container">
+      {/* Header */}
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand-icon">⚡</div>
           <div>
-            <h3>Saved Test Runs</h3>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr
-                  style={{ textAlign: "left", borderBottom: "1px solid #444" }}
+            <h1>API Performance & Load Tester</h1>
+            <div className="brand-subtitle">
+              High-throughput benchmark engine, statistical analyzer & workflow runner
+            </div>
+          </div>
+        </div>
+
+        <div className="ws-status">
+          <div className={`status-dot ${wsConnected ? "connected" : ""}`} />
+          <span>{wsConnected ? "Live Socket Active" : "Socket Reconnecting..."}</span>
+        </div>
+      </header>
+
+      {/* Mode Navigation Tabs */}
+      <nav className="nav-tabs">
+        {[
+          { id: "single", label: "Single Request", icon: "🎯" },
+          { id: "load", label: "Load Test", icon: "🚀" },
+          { id: "scaling", label: "Scaling Test", icon: "📈" },
+          { id: "workflow", label: "Workflow Chain", icon: "🔗" },
+          { id: "compare", label: "Compare Runs", icon: "⚖️" },
+          { id: "history", label: "History & Logs", icon: "📜" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            className={`nav-tab ${mode === tab.id ? "active" : ""}`}
+            onClick={() => {
+              setMode(tab.id);
+              if (tab.id === "history" || tab.id === "compare") {
+                fetchTestRuns();
+              }
+            }}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* Main Request Configuration Form (For Single, Load, Scaling) */}
+      {(mode === "single" || mode === "load" || mode === "scaling") && (
+        <section className="card">
+          <div className="card-title">
+            <span>
+              {mode === "single"
+                ? "Send Individual Request"
+                : mode === "load"
+                ? "Concurrent Load Test Configuration"
+                : "Concurrency Scaling Benchmark"}
+            </span>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
+              {mode === "load" && `Target: ${totalRequests} requests @ ${concurrency} concurrent`}
+            </span>
+          </div>
+
+          <div className="request-bar">
+            <select
+              className={`method-select method-${method}`}
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+            >
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="DELETE">DELETE</option>
+              <option value="PATCH">PATCH</option>
+            </select>
+
+            <input
+              type="text"
+              className="url-input"
+              placeholder="https://api.example.com/endpoint"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+
+            {mode === "single" && (
+              <button
+                className="btn-primary"
+                onClick={handleSendSingleRequest}
+                disabled={loading || !url.trim()}
+              >
+                {loading ? "Sending..." : "Send Request"}
+              </button>
+            )}
+
+            {mode === "load" && (
+              <button
+                className="btn-primary"
+                onClick={handleRunLoadTest}
+                disabled={loading || !url.trim()}
+              >
+                {loading ? `Testing... (${progress.completed}/${progress.total})` : "Start Load Test"}
+              </button>
+            )}
+
+            {mode === "scaling" && (
+              <button
+                className="btn-primary"
+                onClick={handleRunScalingTest}
+                disabled={scalingLoading || !url.trim()}
+              >
+                {scalingLoading ? "Running Scaling Matrix..." : "Start Scaling Test"}
+              </button>
+            )}
+          </div>
+
+          {/* Load Test Specific Controls */}
+          {mode === "load" && (
+            <div className="options-row">
+              <div className="option-group">
+                <label>Concurrency (Virtual Users):</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="500"
+                  className="option-input"
+                  value={concurrency}
+                  onChange={(e) => setConcurrency(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="option-group">
+                <label>Total Requests:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50000"
+                  className="option-input"
+                  style={{ width: "90px" }}
+                  value={totalRequests}
+                  onChange={(e) => setTotalRequests(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="option-group">
+                <label>Timeout (ms):</label>
+                <input
+                  type="number"
+                  min="500"
+                  step="500"
+                  className="option-input"
+                  style={{ width: "90px" }}
+                  value={timeout}
+                  onChange={(e) => setTimeoutVal(Number(e.target.value))}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Scaling Test Specific Controls */}
+          {mode === "scaling" && (
+            <div className="options-row">
+              <div className="option-group">
+                <label>Concurrency Levels:</label>
+                <input
+                  type="text"
+                  style={{ width: "180px" }}
+                  value={scalingLevels}
+                  onChange={(e) => setScalingLevels(e.target.value)}
+                  placeholder="1, 5, 10, 25"
+                />
+              </div>
+
+              <div className="option-group">
+                <label>Requests Per Level:</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="option-input"
+                  value={scalingReqs}
+                  onChange={(e) => setScalingReqs(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="option-group">
+                <label>Timeout (ms):</label>
+                <input
+                  type="number"
+                  min="500"
+                  className="option-input"
+                  style={{ width: "90px" }}
+                  value={timeout}
+                  onChange={(e) => setTimeoutVal(Number(e.target.value))}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Payload and Headers Sub-tabs */}
+          <div>
+            <div className="sub-tabs">
+              <button
+                className={`sub-tab ${activeSubTab === "headers" ? "active" : ""}`}
+                onClick={() => setActiveSubTab("headers")}
+              >
+                Headers (JSON)
+              </button>
+              <button
+                className={`sub-tab ${activeSubTab === "body" ? "active" : ""}`}
+                onClick={() => setActiveSubTab("body")}
+              >
+                Request Body (JSON)
+              </button>
+              {mode === "single" && (
+                <button
+                  className={`sub-tab ${activeSubTab === "settings" ? "active" : ""}`}
+                  onClick={() => setActiveSubTab("settings")}
                 >
-                  <th style={{ padding: "0.5rem" }}>ID</th>
-                  <th style={{ padding: "0.5rem" }}>URL</th>
-                  <th style={{ padding: "0.5rem" }}>Concurrency</th>
-                  <th style={{ padding: "0.5rem" }}>P95</th>
-                  <th style={{ padding: "0.5rem" }}>Success Rate</th>
-                  <th style={{ padding: "0.5rem" }}>Created</th>
+                  Timeout
+                </button>
+              )}
+            </div>
+
+            <div style={{ marginTop: "0.75rem" }}>
+              {activeSubTab === "headers" && (
+                <textarea
+                  rows={4}
+                  style={{ width: "100%" }}
+                  placeholder='{"Authorization": "Bearer token", "Custom-Header": "value"}'
+                  value={headers}
+                  onChange={(e) => setHeaders(e.target.value)}
+                />
+              )}
+
+              {activeSubTab === "body" && (
+                <textarea
+                  rows={5}
+                  style={{ width: "100%" }}
+                  placeholder='{\n  "title": "Example Post",\n  "body": "Lorem ipsum"\n}'
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                />
+              )}
+
+              {activeSubTab === "settings" && mode === "single" && (
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <label style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                    Request Timeout (ms):
+                  </label>
+                  <input
+                    type="number"
+                    min="500"
+                    style={{ width: "110px" }}
+                    value={timeout}
+                    onChange={(e) => setTimeoutVal(Number(e.target.value))}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Live Progress Bar for Load Testing */}
+      {loading && mode === "load" && (
+        <div className="progress-container">
+          <div className="progress-header">
+            <span>Executing Concurrent Requests...</span>
+            <span style={{ fontFamily: "var(--font-mono)" }}>
+              {progress.completed} / {progress.total} (
+              {progress.total > 0
+                ? Math.round((progress.completed / progress.total) * 100)
+                : 0}
+              %)
+            </span>
+          </div>
+          <div className="progress-bar-bg">
+            <div
+              className="progress-bar-fill"
+              style={{
+                width: `${
+                  progress.total > 0
+                    ? (progress.completed / progress.total) * 100
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Single Request Result View */}
+      {mode === "single" && response && (
+        <section className="card">
+          <div className="card-title">
+            <span>Response</span>
+            <div className="response-header">
+              <StatusBadge status={response.status} />
+              {response.durationMs !== undefined && (
+                <span className="badge badge-3xx">{response.durationMs}ms</span>
+              )}
+            </div>
+          </div>
+
+          {!response.success && response.error && (
+            <div className="insight-item error">
+              <span>⚠️</span>
+              <div>
+                <strong>Request Failed:</strong> {response.error}
+              </div>
+            </div>
+          )}
+
+          <div className="sub-tabs">
+            <button
+              className={`sub-tab ${singleResponseTab === "body" ? "active" : ""}`}
+              onClick={() => setSingleResponseTab("body")}
+            >
+              Response Body
+            </button>
+            <button
+              className={`sub-tab ${singleResponseTab === "headers" ? "active" : ""}`}
+              onClick={() => setSingleResponseTab("headers")}
+            >
+              Headers
+            </button>
+            <button
+              className={`sub-tab ${singleResponseTab === "raw" ? "active" : ""}`}
+              onClick={() => setSingleResponseTab("raw")}
+            >
+              Raw Payload
+            </button>
+          </div>
+
+          <div>
+            {singleResponseTab === "body" && (
+              <pre className="raw-json-box">
+                {typeof response.body === "object"
+                  ? JSON.stringify(response.body, null, 2)
+                  : String(response.body ?? "No body returned")}
+              </pre>
+            )}
+
+            {singleResponseTab === "headers" && (
+              <pre className="raw-json-box">
+                {JSON.stringify(response.headers ?? {}, null, 2)}
+              </pre>
+            )}
+
+            {singleResponseTab === "raw" && (
+              <pre className="raw-json-box">
+                {JSON.stringify(response, null, 2)}
+              </pre>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Load Test Result Dashboard */}
+      {mode === "load" && response && response.metrics && (
+        <section className="card">
+          <div className="card-title">
+            <span>Load Test Benchmark Results</span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                className="btn-secondary"
+                onClick={() => exportResultsAsJson(response)}
+              >
+                Export JSON
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => exportResultsAsCsv(response.results)}
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Metric Cards Grid */}
+          <div className="metrics-grid">
+            <MetricCard label="Total Requests" value={response.metrics.totalRequests} />
+            <MetricCard
+              label="Success Rate"
+              value={response.metrics.successRate}
+              unit="%"
+              highlight
+            />
+            <MetricCard label="Avg Latency" value={response.metrics.avgMs} unit="ms" />
+            <MetricCard label="P50 Latency" value={response.metrics.p50} unit="ms" />
+            <MetricCard label="P95 Latency" value={response.metrics.p95} unit="ms" highlight />
+            <MetricCard label="P99 Latency" value={response.metrics.p99} unit="ms" />
+            <MetricCard
+              label="Throughput"
+              value={response.metrics.throughputRps}
+              unit=" req/s"
+              highlight
+            />
+            <MetricCard label="Duration" value={response.totalDurationMs} unit="ms" />
+          </div>
+
+          {/* Apdex Score Card */}
+          {response.apdex && <ApdexCard apdex={response.apdex} />}
+
+          {/* Rule-based Insights */}
+          {response.insights && response.insights.length > 0 && (
+            <div>
+              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                Rule-Based Performance & Root-Cause Diagnostics
+              </div>
+              <InsightsList insights={response.insights} />
+            </div>
+          )}
+
+          {/* Charts */}
+          {response.results && response.results.length > 0 && (
+            <>
+              <LatencyChart results={response.results} />
+              <StatusBreakdownChart results={response.results} />
+            </>
+          )}
+        </section>
+      )}
+
+      {/* Scaling Test Result View */}
+      {mode === "scaling" && scalingResult && (
+        <section className="card">
+          <div className="card-title">
+            <span>Scaling Benchmark Results</span>
+          </div>
+
+          {!scalingResult.success && (
+            <div className="insight-item error">
+              <span>⚠️</span>
+              <div>{scalingResult.error}</div>
+            </div>
+          )}
+
+          {scalingResult.success && scalingResult.runs && (
+            <>
+              <ScalingChart runs={scalingResult.runs} />
+
+              {/* Concurrency Scaling Insights */}
+              {scalingResult.insights && scalingResult.insights.length > 0 && (
+                <div>
+                  <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                    Concurrency Bottleneck & Scaling Insights
+                  </div>
+                  <InsightsList insights={scalingResult.insights} />
+                </div>
+              )}
+
+              <div style={{ marginTop: "1rem" }}>
+                <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                  Per-Level Metric Breakdown
+                </div>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Concurrency</th>
+                      <th>Requests</th>
+                      <th>Avg Latency</th>
+                      <th>P50</th>
+                      <th>P95</th>
+                      <th>P99</th>
+                      <th>Throughput</th>
+                      <th>Success Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scalingResult.runs.map((run, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600, color: "var(--accent)" }}>
+                          {run.concurrency} VUs
+                        </td>
+                        <td>{run.metrics.totalRequests}</td>
+                        <td>{run.metrics.avgMs}ms</td>
+                        <td>{run.metrics.p50}ms</td>
+                        <td style={{ color: "#38bdf8" }}>{run.metrics.p95}ms</td>
+                        <td>{run.metrics.p99}ms</td>
+                        <td style={{ color: "#34d399", fontWeight: 600 }}>
+                          {run.metrics.throughputRps} req/s
+                        </td>
+                        <td>{run.metrics.successRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {/* Multi-step Workflow View */}
+      {mode === "workflow" && (
+        <section className="card">
+          <div className="card-title">
+            <span>Multi-Step Workflow Chaining</span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                className="btn-secondary"
+                onClick={() =>
+                  setWorkflowSteps(
+                    JSON.stringify(
+                      [
+                        {
+                          name: "Get Post",
+                          request: {
+                            method: "GET",
+                            url: "https://jsonplaceholder.typicode.com/posts/1",
+                          },
+                          extract: { postId: "body.id", userId: "body.userId" },
+                        },
+                        {
+                          name: "Get User Info",
+                          request: {
+                            method: "GET",
+                            url: "https://jsonplaceholder.typicode.com/users/{{userId}}",
+                          },
+                          extract: { email: "body.email" },
+                        },
+                        {
+                          name: "Create Comment",
+                          request: {
+                            method: "POST",
+                            url: "https://jsonplaceholder.typicode.com/comments",
+                            body: {
+                              postId: "{{postId}}",
+                              name: "Automated Feedback",
+                              email: "{{email}}",
+                              body: "Great post!",
+                            },
+                          },
+                        },
+                      ],
+                      null,
+                      2
+                    )
+                  )
+                }
+              >
+                Load Preset (3-Step)
+              </button>
+            </div>
+          </div>
+
+          <div className="card-subtitle">
+            Define sequential API steps. Extracted values from earlier responses can be
+            referenced in subsequent steps using <code>{"{{variableName}}"}</code>.
+          </div>
+
+          <textarea
+            rows={14}
+            value={workflowSteps}
+            onChange={(e) => setWorkflowSteps(e.target.value)}
+            style={{ width: "100%", fontSize: "0.825rem" }}
+          />
+
+          <div>
+            <button
+              className="btn-primary"
+              onClick={handleRunWorkflow}
+              disabled={workflowLoading}
+            >
+              {workflowLoading ? "Executing Workflow Chain..." : "Execute Workflow"}
+            </button>
+          </div>
+
+          {workflowResult && (
+            <div style={{ marginTop: "1rem" }}>
+              {!workflowResult.success && (
+                <div className="insight-item error">
+                  <span>⚠️</span>
+                  <div>{workflowResult.error}</div>
+                </div>
+              )}
+
+              {workflowResult.success && (
+                <>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Step</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workflowResult.steps.map((s, idx) => (
+                        <tr key={idx}>
+                          <td style={{ fontWeight: 600 }}>{s.name}</td>
+                          <td>
+                            <StatusBadge status={s.status} />
+                          </td>
+                          <td style={{ fontFamily: "var(--font-mono)" }}>
+                            {s.durationMs}ms
+                          </td>
+                          <td style={{ color: s.success ? "var(--success)" : "var(--danger)" }}>
+                            {s.success ? "Passed" : s.error || "Failed"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div style={{ marginTop: "1.25rem" }}>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.5rem" }}>
+                      Extracted Context Variables:
+                    </div>
+                    <pre className="raw-json-box">
+                      {JSON.stringify(workflowResult.context, null, 2)}
+                    </pre>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Compare Runs View */}
+      {mode === "compare" && (
+        <section className="card">
+          <div className="card-title">
+            <span>Compare Two Benchmark Runs</span>
+          </div>
+          <div className="card-subtitle">
+            Compare metrics between baseline and new test runs to evaluate performance regressions.
+          </div>
+
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+            <select
+              style={{ flex: 1, minWidth: "220px" }}
+              value={compareRunA}
+              onChange={(e) => setCompareRunA(e.target.value)}
+            >
+              <option value="">Select Baseline Run A (Before)</option>
+              {testRuns.map((r) => (
+                <option key={r.id} value={r.id}>
+                  #{r.id} | {r.method} {r.url} (P95: {r.p95}ms, {r.concurrency} VU)
+                </option>
+              ))}
+            </select>
+
+            <select
+              style={{ flex: 1, minWidth: "220px" }}
+              value={compareRunB}
+              onChange={(e) => setCompareRunB(e.target.value)}
+            >
+              <option value="">Select Target Run B (After)</option>
+              {testRuns.map((r) => (
+                <option key={r.id} value={r.id}>
+                  #{r.id} | {r.method} {r.url} (P95: {r.p95}ms, {r.concurrency} VU)
+                </option>
+              ))}
+            </select>
+
+            <button
+              className="btn-primary"
+              onClick={handleCompare}
+              disabled={!compareRunA || !compareRunB || compareLoading}
+            >
+              {compareLoading ? "Diffing..." : "Compare Runs"}
+            </button>
+          </div>
+
+          {compareResult && compareResult.success && (
+            <div style={{ marginTop: "1rem" }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Before (Run #{compareRunA})</th>
+                    <th>After (Run #{compareRunB})</th>
+                    <th>Delta</th>
+                    <th>Verdict</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(compareResult.comparison).map(([metric, data]) => (
+                    <tr key={metric}>
+                      <td style={{ fontWeight: 600 }}>{metric.toUpperCase()}</td>
+                      <td style={{ fontFamily: "var(--font-mono)" }}>{data.before}</td>
+                      <td style={{ fontFamily: "var(--font-mono)" }}>{data.after}</td>
+                      <td
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          color:
+                            data.diff > 0
+                              ? "var(--danger)"
+                              : data.diff < 0
+                              ? "var(--success)"
+                              : "inherit",
+                        }}
+                      >
+                        {data.diff > 0 ? `+${data.diff}` : data.diff} ({data.percentChange}%)
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${
+                            data.verdict === "improved"
+                              ? "badge-2xx"
+                              : data.verdict === "degraded"
+                              ? "badge-5xx"
+                              : "badge-3xx"
+                          }`}
+                        >
+                          {data.verdict.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* History & Logs View */}
+      {mode === "history" && (
+        <section className="card">
+          <div className="card-title">
+            <span>Historical Test Runs</span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="btn-secondary" onClick={fetchTestRuns}>
+                Refresh
+              </button>
+              {testRuns.length > 0 && (
+                <button className="btn-danger" onClick={handleClearAllHistory}>
+                  Clear All History
+                </button>
+              )}
+            </div>
+          </div>
+
+          {testRuns.length === 0 ? (
+            <div style={{ color: "var(--text-dim)", padding: "2rem", textAlign: "center" }}>
+              No saved test runs found. Run a load test to view history here.
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Method & Endpoint</th>
+                  <th>Concurrency</th>
+                  <th>P95 Latency</th>
+                  <th>Throughput</th>
+                  <th>Success Rate</th>
+                  <th>Created At</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {testRuns.map((run) => (
+                {testRuns.map((r) => (
                   <tr
-                    key={run.id}
-                    style={{ borderBottom: "1px solid #2a2a2a" }}
+                    key={r.id}
+                    className="clickable"
+                    onClick={() => handleViewRunDetail(r.id)}
                   >
-                    <td style={{ padding: "0.5rem" }}>{run.id}</td>
+                    <td style={{ fontWeight: 600, color: "var(--accent)" }}>#{r.id}</td>
                     <td
                       style={{
-                        padding: "0.5rem",
-                        maxWidth: "250px",
+                        maxWidth: "260px",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {run.url}
+                      <span className={`badge method-${r.method}`} style={{ marginRight: "0.5rem" }}>
+                        {r.method}
+                      </span>
+                      {r.url}
                     </td>
-                    <td style={{ padding: "0.5rem" }}>{run.concurrency}</td>
-                    <td style={{ padding: "0.5rem" }}>{run.p95}ms</td>
-                    <td style={{ padding: "0.5rem" }}>{run.success_rate}%</td>
-                    <td style={{ padding: "0.5rem" }}>{run.created_at}</td>
+                    <td>{r.concurrency} VU</td>
+                    <td style={{ color: "#38bdf8", fontWeight: 600 }}>{r.p95}ms</td>
+                    <td>{r.throughput_rps} req/s</td>
+                    <td>
+                      <span className={r.success_rate >= 99 ? "badge badge-2xx" : "badge badge-4xx"}>
+                        {r.success_rate}%
+                      </span>
+                    </td>
+                    <td style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+                      {r.created_at}
+                    </td>
+                    <td>
+                      <button
+                        className="btn-danger"
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                        onClick={(e) => handleDeleteRun(e, r.id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
+          )}
+        </section>
+      )}
 
-        {mode === "compare" && (
-          <div>
-            <h3>Compare Two Runs</h3>
-            <div
-              style={{
-                display: "flex",
-                gap: "0.5rem",
-                alignItems: "center",
-                marginBottom: "1rem",
-              }}
-            >
-              <select
-                value={compareRunA}
-                onChange={(e) => setCompareRunA(e.target.value)}
-              >
-                <option value="">Select Run A (before)</option>
-                {testRuns.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    #{run.id} — concurrency {run.concurrency}, P95 {run.p95}ms (
-                    {run.created_at})
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={compareRunB}
-                onChange={(e) => setCompareRunB(e.target.value)}
-              >
-                <option value="">Select Run B (after)</option>
-                {testRuns.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    #{run.id} — concurrency {run.concurrency}, P95 {run.p95}ms (
-                    {run.created_at})
-                  </option>
-                ))}
-              </select>
-
+      {/* Run Detail Drilldown Modal */}
+      {selectedRunDetail && (
+        <div className="modal-overlay" onClick={() => setSelectedRunDetail(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="card-title">
+              <span>
+                Test Run #{selectedRunDetail.run.id} Details: {selectedRunDetail.run.method}{" "}
+                {selectedRunDetail.run.url}
+              </span>
               <button
-                onClick={handleCompare}
-                disabled={!compareRunA || !compareRunB}
+                className="btn-secondary"
+                onClick={() => setSelectedRunDetail(null)}
               >
-                Compare
+                Close
               </button>
             </div>
 
-            {compareResult && compareResult.success && (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr
-                    style={{
-                      textAlign: "left",
-                      borderBottom: "1px solid #444",
-                    }}
-                  >
-                    <th style={{ padding: "0.5rem" }}>Metric</th>
-                    <th style={{ padding: "0.5rem" }}>Before</th>
-                    <th style={{ padding: "0.5rem" }}>After</th>
-                    <th style={{ padding: "0.5rem" }}>Change</th>
-                    <th style={{ padding: "0.5rem" }}>Verdict</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(compareResult.comparison).map(
-                    ([metric, data]) => (
-                      <tr
-                        key={metric}
-                        style={{ borderBottom: "1px solid #2a2a2a" }}
-                      >
-                        <td style={{ padding: "0.5rem" }}>{metric}</td>
-                        <td style={{ padding: "0.5rem" }}>{data.before}</td>
-                        <td style={{ padding: "0.5rem" }}>{data.after}</td>
-                        <td style={{ padding: "0.5rem" }}>
-                          {data.percentChange}%
-                        </td>
-                        <td
-                          style={{
-                            padding: "0.5rem",
-                            color:
-                              data.verdict === "improved"
-                                ? "#4caf50"
-                                : data.verdict === "degraded"
-                                  ? "#f44336"
-                                  : "#999",
-                          }}
-                        >
-                          {data.verdict}
-                        </td>
-                      </tr>
-                    ),
-                  )}
-                </tbody>
-              </table>
-            )}
-
-            {compareResult && !compareResult.success && (
-              <div style={{ color: "#f44336" }}>{compareResult.error}</div>
-            )}
-          </div>
-        )}
-
-        {mode === "scaling" && (
-          <div>
-            <h3>Concurrency Scaling Test</h3>
-            <p style={{ fontSize: "0.85rem", color: "#999" }}>
-              Uses the URL/method from the input row above. Runs one full load
-              test per concurrency level, sequentially — this can take a while.
-            </p>
-
-            <div
-              style={{
-                display: "flex",
-                gap: "0.5rem",
-                marginBottom: "1rem",
-                alignItems: "center",
-              }}
-            >
-              <label>
-                Concurrency levels:
-                <input
-                  type="text"
-                  value={scalingConcurrencyLevels}
-                  onChange={(e) => setScalingConcurrencyLevels(e.target.value)}
-                  style={{ marginLeft: "0.5rem", width: "150px" }}
-                />
-              </label>
-              <label>
-                Requests per level:
-                <input
-                  type="number"
-                  min="1"
-                  value={scalingRequestsPerLevel}
-                  onChange={(e) =>
-                    setScalingRequestsPerLevel(Number(e.target.value))
-                  }
-                  style={{ marginLeft: "0.5rem", width: "70px" }}
-                />
-              </label>
-              <button
-                onClick={handleRunScalingTest}
-                disabled={scalingLoading || !url}
-              >
-                {scalingLoading
-                  ? "Running scaling test..."
-                  : "Run Scaling Test"}
-              </button>
+            <div className="metrics-grid">
+              <MetricCard
+                label="Total Requests"
+                value={selectedRunDetail.metrics.totalRequests}
+              />
+              <MetricCard
+                label="Success Rate"
+                value={selectedRunDetail.metrics.successRate}
+                unit="%"
+                highlight
+              />
+              <MetricCard label="Avg Latency" value={selectedRunDetail.metrics.avgMs} unit="ms" />
+              <MetricCard label="P50 Latency" value={selectedRunDetail.metrics.p50} unit="ms" />
+              <MetricCard
+                label="P95 Latency"
+                value={selectedRunDetail.metrics.p95}
+                unit="ms"
+                highlight
+              />
+              <MetricCard label="P99 Latency" value={selectedRunDetail.metrics.p99} unit="ms" />
+              <MetricCard
+                label="Throughput"
+                value={selectedRunDetail.metrics.throughputRps}
+                unit=" req/s"
+                highlight
+              />
             </div>
 
-            {scalingResult && scalingResult.success && (
+            {/* Apdex Score Card */}
+            {selectedRunDetail.apdex && <ApdexCard apdex={selectedRunDetail.apdex} />}
+
+            {selectedRunDetail.insights && (
+              <InsightsList insights={selectedRunDetail.insights} />
+            )}
+
+            {selectedRunDetail.requests && (
               <>
-                <ScalingChart runs={scalingResult.runs} />
-
-                {scalingResult.insights &&
-                  scalingResult.insights.length > 0 && (
-                    <div style={{ marginTop: "1rem" }}>
-                      {scalingResult.insights.map((insight, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            padding: "0.75rem",
-                            marginBottom: "0.5rem",
-                            borderRadius: "4px",
-                            background:
-                              insight.level === "error"
-                                ? "#3a1a1a"
-                                : insight.level === "warning"
-                                  ? "#3a2f1a"
-                                  : "#1a3a1f",
-                            color:
-                              insight.level === "error"
-                                ? "#ff8a80"
-                                : insight.level === "warning"
-                                  ? "#ffcc80"
-                                  : "#a5d6a7",
-                          }}
-                        >
-                          {insight.message}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <LatencyChart results={selectedRunDetail.requests} />
+                <div style={{ marginTop: "1rem" }}>
+                  <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                    Request Logs ({selectedRunDetail.requests.length} requests recorded)
+                  </div>
+                  <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Request #</th>
+                          <th>Duration</th>
+                          <th>Status</th>
+                          <th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedRunDetail.requests.slice(0, 100).map((req, i) => (
+                          <tr key={i}>
+                            <td>#{req.request_index + 1}</td>
+                            <td style={{ fontFamily: "var(--font-mono)" }}>
+                              {req.duration_ms}ms
+                            </td>
+                            <td>
+                              <StatusBadge status={req.status} />
+                            </td>
+                            <td style={{ color: req.success ? "var(--success)" : "var(--danger)" }}>
+                              {req.success ? "Success" : "Failed"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </>
             )}
-
-            {scalingResult && !scalingResult.success && (
-              <div style={{ color: "#f44336" }}>{scalingResult.error}</div>
-            )}
           </div>
-        )}
+        </div>
+      )}
 
-        {mode === "workflow" && (
-          <div>
-            <h3>Multi-Step Workflow</h3>
-            <p style={{ fontSize: "0.85rem", color: "#999" }}>
-              Define steps as JSON. Use{" "}
-              <code>{"{{variableName}}"}</code> anywhere in a later step to
-              reference a value extracted from an earlier one.
-            </p>
-
-            <textarea
-              value={workflowSteps}
-              onChange={(e) => setWorkflowSteps(e.target.value)}
-              rows={14}
-              style={{
-                width: "100%",
-                display: "block",
-                fontFamily: "monospace",
-                fontSize: "0.85rem",
-              }}
-            />
-
-            <button
-              onClick={handleRunWorkflow}
-              disabled={workflowLoading}
-              style={{ marginTop: "0.5rem" }}
-            >
-              {workflowLoading ? "Running workflow..." : "Run Workflow"}
-            </button>
-
-            {workflowResult && workflowResult.success && (
-              <div style={{ marginTop: "1rem" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "1px solid #444",
-                      }}
-                    >
-                      <th style={{ padding: "0.5rem" }}>Step</th>
-                      <th style={{ padding: "0.5rem" }}>Status</th>
-                      <th style={{ padding: "0.5rem" }}>Duration</th>
-                      <th style={{ padding: "0.5rem" }}>Result</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workflowResult.steps.map((step, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid #2a2a2a" }}>
-                        <td style={{ padding: "0.5rem" }}>{step.name}</td>
-                        <td style={{ padding: "0.5rem" }}>
-                          {step.status ?? "—"}
-                        </td>
-                        <td style={{ padding: "0.5rem" }}>
-                          {step.durationMs}ms
-                        </td>
-                        <td
-                          style={{
-                            padding: "0.5rem",
-                            color: step.success ? "#4caf50" : "#f44336",
-                          }}
-                        >
-                          {step.success ? "Success" : step.error || "Failed"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <div style={{ marginTop: "1rem" }}>
-                  <strong>Extracted values:</strong>
-                  <pre
-                    style={{
-                      background: "#1a1a1a",
-                      color: "#eee",
-                      padding: "0.75rem",
-                      marginTop: "0.5rem",
-                      overflow: "auto",
-                    }}
-                  >
-                    {JSON.stringify(workflowResult.context, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            )}
-
-            {workflowResult && !workflowResult.success && (
-              <div style={{ color: "#f44336", marginTop: "1rem" }}>
-                {workflowResult.error}
-              </div>
-            )}
+      {detailLoading && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: "300px", textAlign: "center" }}>
+            Loading test run details...
           </div>
-        )}
-
-        {loading && progress.total > 0 && (
-          <div style={{ marginTop: "0.5rem" }}>
-            Progress: {progress.completed} / {progress.total}
-          </div>
-        )}
-
-        {response && response.metrics && (
-          <div
-            style={{
-              display: "flex",
-              gap: "0.75rem",
-              flexWrap: "wrap",
-              marginTop: "1rem",
-            }}
-          >
-            <MetricCard
-              label="Total Requests"
-              value={response.metrics.totalRequests}
-            />
-            <MetricCard
-              label="Success Rate"
-              value={`${response.metrics.successRate}%`}
-            />
-            <MetricCard label="Avg (ms)" value={response.metrics.avgMs} />
-            <MetricCard label="P50 (ms)" value={response.metrics.p50} />
-            <MetricCard label="P95 (ms)" value={response.metrics.p95} />
-            <MetricCard label="P99 (ms)" value={response.metrics.p99} />
-            <MetricCard
-              label="Throughput (req/s)"
-              value={response.metrics.throughputRps}
-            />
-          </div>
-        )}
-
-        {response && response.results && response.results.length > 0 && (
-          <>
-            <LatencyChart results={response.results} />
-            <StatusBreakdownChart results={response.results} />
-          </>
-        )}
-
-        {response && (
-          <pre
-            style={{
-              background: "#1a1a1a",
-              color: "#eee",
-              padding: "1rem",
-              marginTop: "1rem",
-              overflow: "auto",
-              maxWidth: "100%",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-            }}
-          >
-            {JSON.stringify(response, null, 2)}
-          </pre>
-        )}
-      </div>
-
-      <div style={{ marginBottom: "1rem", marginTop: "1rem" }}>
-        <label>Headers (JSON)</label>
-        <textarea
-          value={headers}
-          onChange={(e) => setHeaders(e.target.value)}
-          placeholder='{"Authorization": "Bearer token"}'
-          rows={3}
-          style={{ width: "100%", display: "block" }}
-        />
-      </div>
-
-      <div style={{ marginBottom: "1rem" }}>
-        <label>Body (JSON, optional)</label>
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder='{"key": "value"}'
-          rows={4}
-          style={{ width: "100%", display: "block" }}
-        />
-      </div>
+        </div>
+      )}
     </div>
   );
 }
-
-export default App;
