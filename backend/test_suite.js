@@ -266,3 +266,57 @@ test('10. loadTestRunner: executes concurrent HTTP requests with progress tracki
   assert.strictEqual(results[0].success, true);
   assert.strictEqual(results[0].status, 200);
 });
+
+test('11. evaluateSlaBudget: verifies SLA threshold rules and pass/fail verdicts', () => {
+  const { evaluateSlaBudget } = require('./insights');
+  const metrics = {
+    p95: 120,
+    p99: 250,
+    successRate: 99.5,
+    throughputRps: 50,
+  };
+  const apdex = { score: 0.96 };
+
+  const passingBudget = {
+    targetP95Ms: 200,
+    targetP99Ms: 400,
+    maxErrorRate: 1.0,
+    minApdex: 0.90,
+    minThroughputRps: 40,
+  };
+
+  const passVerdict = evaluateSlaBudget(metrics, apdex, passingBudget);
+  assert.strictEqual(passVerdict.passed, true);
+  assert.strictEqual(passVerdict.rules.length, 5);
+  assert.ok(passVerdict.rules.every((r) => r.passed));
+
+  const failingBudget = {
+    targetP95Ms: 100,
+    maxErrorRate: 0.1,
+  };
+
+  const failVerdict = evaluateSlaBudget(metrics, apdex, failingBudget);
+  assert.strictEqual(failVerdict.passed, false);
+  assert.strictEqual(failVerdict.rules.filter((r) => !r.passed).length, 2);
+});
+
+test('12. workerLoadRunner: executes load tests using multi-threaded worker pool', async () => {
+  const runMultiCoreLoadTest = require('./workerLoadRunner');
+  let progressCount = 0;
+  const results = await runMultiCoreLoadTest({
+    url: 'https://jsonplaceholder.typicode.com/posts/1',
+    method: 'GET',
+    concurrency: 4,
+    totalRequests: 8,
+    workerCount: 2,
+    onProgress: (_, completed, total) => {
+      progressCount = completed;
+      assert.strictEqual(total, 8);
+    },
+  });
+
+  assert.strictEqual(results.length, 8);
+  assert.strictEqual(progressCount, 8);
+  assert.strictEqual(results[0].success, true);
+});
+

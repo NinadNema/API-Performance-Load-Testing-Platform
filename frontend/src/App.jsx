@@ -11,6 +11,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import "./App.css";
+import { autoDetectAndParse } from "./utils/importers";
+import { generateExecutivePdfReport } from "./utils/generatePdfReport";
 
 function MetricCard({ label, value, highlight = false, unit = "" }) {
   return (
@@ -48,29 +50,14 @@ function InsightsList({ insights }) {
 
   return (
     <div className="insights-list">
-      {insights.map((insight, idx) => (
-        <div key={idx} className={`insight-item ${insight.level}`}>
-          <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>
-            {getCategoryIcon(insight)}
-          </span>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong>
-                {insight.category
-                  ? insight.category.replace(/_/g, " ").toUpperCase()
-                  : insight.level === "error"
-                  ? "ISSUE DETECTED"
-                  : insight.level === "warning"
-                  ? "WARNING"
-                  : "OPTIMAL"}
-              </strong>
-              <span className={`badge badge-${insight.level === 'error' ? '5xx' : insight.level === 'warning' ? '4xx' : '2xx'}`}>
-                {insight.level.toUpperCase()}
-              </span>
-            </div>
-            <p style={{ marginTop: "0.25rem", color: "inherit", opacity: 0.95 }}>
-              {insight.message}
-            </p>
+      {insights.map((ins, index) => (
+        <div key={index} className={`insight-item ${ins.level || "info"}`}>
+          <span className="insight-icon">{getCategoryIcon(ins)}</span>
+          <div className="insight-content">
+            {ins.category && (
+              <span className="insight-category-badge">{ins.category.replace(/_/g, " ")}</span>
+            )}
+            <div>{ins.message}</div>
           </div>
         </div>
       ))}
@@ -80,46 +67,74 @@ function InsightsList({ insights }) {
 
 function ApdexCard({ apdex }) {
   if (!apdex) return null;
-  const ratingBadge =
-    apdex.rating === "Excellent" || apdex.rating === "Good"
-      ? "badge-2xx"
-      : apdex.rating === "Fair"
-      ? "badge-3xx"
-      : "badge-5xx";
+
+  const ratingClass =
+    apdex.score >= 0.94
+      ? "apdex-excellent"
+      : apdex.score >= 0.85
+      ? "apdex-good"
+      : apdex.score >= 0.70
+      ? "apdex-fair"
+      : apdex.score >= 0.50
+      ? "apdex-poor"
+      : "apdex-unacceptable";
 
   return (
-    <div
-      style={{
-        background: "var(--bg-input)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "var(--radius-md)",
-        padding: "0.9rem 1.25rem",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: "0.75rem",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        <span style={{ fontSize: "1.5rem" }}>⭐</span>
-        <div>
-          <div style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 600 }}>
-            Apdex User Experience Score (T = {apdex.targetLatencyMs}ms)
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.15rem" }}>
-            <span style={{ fontSize: "1.25rem", fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
-              {apdex.score}
-            </span>
-            <span className={`badge ${ratingBadge}`}>{apdex.rating}</span>
-          </div>
+    <div className={`apdex-card ${ratingClass}`}>
+      <div className="apdex-header">
+        <div className="apdex-title">
+          <span>Apdex (Application Performance Index)</span>
+          <span className="apdex-badge">{apdex.rating}</span>
         </div>
+        <div className="apdex-score-display">{apdex.score.toFixed(2)}</div>
       </div>
 
-      <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-        <span>😊 Satisfied (≤{apdex.targetLatencyMs}ms): <strong style={{ color: "#34d399" }}>{apdex.satisfied}</strong></span>
-        <span>😐 Tolerating (≤{apdex.targetLatencyMs * 4}ms): <strong style={{ color: "#fbbf24" }}>{apdex.tolerating}</strong></span>
-        <span>😞 Frustrated: <strong style={{ color: "#f87171" }}>{apdex.frustrated}</strong></span>
+      <div className="apdex-progress-bar">
+        <div
+          className="apdex-bar satisfied"
+          style={{ width: `${(apdex.satisfied / (apdex.satisfied + apdex.tolerating + apdex.frustrated || 1)) * 100}%` }}
+          title={`Satisfied (<= ${apdex.targetLatencyMs}ms)`}
+        />
+        <div
+          className="apdex-bar tolerating"
+          style={{ width: `${(apdex.tolerating / (apdex.satisfied + apdex.tolerating + apdex.frustrated || 1)) * 100}%` }}
+          title={`Tolerating (<= ${apdex.targetLatencyMs * 4}ms)`}
+        />
+        <div
+          className="apdex-bar frustrated"
+          style={{ width: `${(apdex.frustrated / (apdex.satisfied + apdex.tolerating + apdex.frustrated || 1)) * 100}%` }}
+          title={`Frustrated (> ${apdex.targetLatencyMs * 4}ms or errors)`}
+        />
+      </div>
+
+      <div className="apdex-stats">
+        <span>🟢 Satisfied: <strong>{apdex.satisfied}</strong> (≤{apdex.targetLatencyMs}ms)</span>
+        <span>🟡 Tolerating: <strong>{apdex.tolerating}</strong> (≤{apdex.targetLatencyMs * 4}ms)</span>
+        <span>🔴 Frustrated: <strong>{apdex.frustrated}</strong> (&gt;{apdex.targetLatencyMs * 4}ms / err)</span>
+      </div>
+    </div>
+  );
+}
+
+function SlaVerdictCard({ slaVerdict }) {
+  if (!slaVerdict) return null;
+  const passed = slaVerdict.passed;
+
+  return (
+    <div className={`sla-card ${passed ? "sla-passed" : "sla-failed"}`}>
+      <div className="sla-header">
+        <span className="sla-badge">{passed ? "✓ SLA AUDIT PASSED" : "✗ SLA AUDIT FAILED"}</span>
+        <span className="sla-summary">{slaVerdict.summary}</span>
+      </div>
+      <div className="sla-rules-grid">
+        {slaVerdict.rules.map((rule, idx) => (
+          <div key={idx} className={`sla-rule-item ${rule.passed ? "rule-pass" : "rule-fail"}`}>
+            <div className="sla-rule-metric">{rule.metric}</div>
+            <div className="sla-rule-target">Target: <span>{rule.target}</span></div>
+            <div className="sla-rule-actual">Actual: <strong>{rule.actual}</strong></div>
+            <div className="sla-rule-status">{rule.passed ? "PASSED" : "FAILED"}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -128,40 +143,40 @@ function ApdexCard({ apdex }) {
 function LatencyChart({ results }) {
   if (!results || results.length === 0) return null;
 
-  const chartData = [...results]
-    .sort((a, b) => a.requestIndex - b.requestIndex)
-    .map((r) => ({
-      request: `#${(r.requestIndex ?? 0) + 1}`,
-      latency: r.durationMs ?? 0,
-      status: r.status ?? "ERR",
-    }));
+  const chartData = results.map((r) => ({
+    request: `#${(r.requestIndex ?? 0) + 1}`,
+    latency: typeof r.durationMs === "number" ? r.durationMs : 0,
+    status: r.status || (r.success ? 200 : "ERR"),
+    success: r.success,
+  }));
 
   return (
-    <div className="chart-wrapper">
-      <div style={{ marginBottom: "0.75rem", fontSize: "0.875rem", fontWeight: 600 }}>
-        Request Latency Timeline (ms)
+    <div className="chart-wrapper" style={{ marginTop: "1rem" }}>
+      <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+        Per-Request Latency Timeline (ms)
       </div>
-      <div style={{ width: "100%", height: 280 }}>
+      <div style={{ width: "100%", height: 260 }}>
         <ResponsiveContainer>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#23304a" />
-            <XAxis dataKey="request" stroke="#64748b" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#64748b" tick={{ fontSize: 11 }} unit="ms" />
+          <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+            <XAxis dataKey="request" stroke="var(--text-dim)" fontSize={11} interval="preserveStartEnd" />
+            <YAxis stroke="var(--text-dim)" fontSize={11} unit="ms" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#111827",
-                borderColor: "#334155",
-                borderRadius: "8px",
-                color: "#f8fafc",
+                backgroundColor: "var(--bg-card)",
+                borderColor: "var(--border-color)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--text-main)",
                 fontSize: "0.8rem",
               }}
             />
             <Line
               type="monotone"
               dataKey="latency"
+              name="Latency (ms)"
               stroke="#38bdf8"
               strokeWidth={2}
-              dot={{ r: 2, fill: "#38bdf8" }}
+              dot={{ r: 2 }}
               activeDot={{ r: 5 }}
             />
           </LineChart>
@@ -175,37 +190,37 @@ function StatusBreakdownChart({ results }) {
   if (!results || results.length === 0) return null;
 
   const counts = {};
-  for (const r of results) {
-    const key = r.status ? String(r.status) : "Error / Timeout";
-    counts[key] = (counts[key] || 0) + 1;
-  }
+  results.forEach((r) => {
+    const code = r.status ? String(r.status) : "Network Err";
+    counts[code] = (counts[code] || 0) + 1;
+  });
 
-  const chartData = Object.entries(counts).map(([status, count]) => ({
+  const data = Object.entries(counts).map(([status, count]) => ({
     status,
     count,
   }));
 
   return (
-    <div className="chart-wrapper">
-      <div style={{ marginBottom: "0.75rem", fontSize: "0.875rem", fontWeight: 600 }}>
-        HTTP Status Code Breakdown
+    <div className="chart-wrapper" style={{ marginTop: "1rem" }}>
+      <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+        HTTP Status Distribution
       </div>
-      <div style={{ width: "100%", height: 220 }}>
+      <div style={{ width: "100%", height: 200 }}>
         <ResponsiveContainer>
-          <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#23304a" />
-            <XAxis dataKey="status" stroke="#64748b" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#64748b" allowDecimals={false} tick={{ fontSize: 11 }} />
+          <BarChart data={data} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+            <XAxis dataKey="status" stroke="var(--text-dim)" fontSize={11} />
+            <YAxis stroke="var(--text-dim)" fontSize={11} />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#111827",
-                borderColor: "#334155",
-                borderRadius: "8px",
-                color: "#f8fafc",
+                backgroundColor: "var(--bg-card)",
+                borderColor: "var(--border-color)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--text-main)",
                 fontSize: "0.8rem",
               }}
             />
-            <Bar dataKey="count" fill="#818cf8" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="count" name="Count" fill="#818cf8" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -216,54 +231,49 @@ function StatusBreakdownChart({ results }) {
 function ScalingChart({ runs }) {
   if (!runs || runs.length === 0) return null;
 
-  const chartData = [...runs]
-    .sort((a, b) => a.concurrency - b.concurrency)
-    .map((r) => ({
-      concurrency: `VU ${r.concurrency}`,
-      p95: r.metrics?.p95 ?? r.p95 ?? 0,
-      throughput: r.metrics?.throughputRps ?? r.throughput_rps ?? 0,
-    }));
+  const chartData = runs.map((r) => ({
+    concurrency: `${r.concurrency} VUs`,
+    avgMs: r.metrics.avgMs,
+    p95Ms: r.metrics.p95,
+    throughput: r.metrics.throughputRps,
+  }));
 
   return (
-    <div className="chart-wrapper">
-      <div style={{ marginBottom: "0.75rem", fontSize: "0.875rem", fontWeight: 600 }}>
-        Concurrency Scaling: P95 Latency vs Throughput
+    <div className="chart-wrapper" style={{ marginTop: "1rem" }}>
+      <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+        Scaling Profile: Latency vs. Throughput Curve
       </div>
-      <div style={{ width: "100%", height: 300 }}>
+      <div style={{ width: "100%", height: 280 }}>
         <ResponsiveContainer>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#23304a" />
-            <XAxis dataKey="concurrency" stroke="#64748b" tick={{ fontSize: 11 }} />
-            <YAxis
-              yAxisId="left"
-              stroke="#38bdf8"
-              tick={{ fontSize: 11 }}
-              unit="ms"
-              label={{ value: "P95 Latency", angle: -90, position: "insideLeft", fill: "#38bdf8", fontSize: 12 }}
-            />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              stroke="#34d399"
-              tick={{ fontSize: 11 }}
-              unit=" rps"
-              label={{ value: "Throughput", angle: 90, position: "insideRight", fill: "#34d399", fontSize: 12 }}
-            />
+          <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+            <XAxis dataKey="concurrency" stroke="var(--text-dim)" fontSize={11} />
+            <YAxis yAxisId="left" stroke="#38bdf8" fontSize={11} unit="ms" />
+            <YAxis yAxisId="right" orientation="right" stroke="#34d399" fontSize={11} unit=" rps" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#111827",
-                borderColor: "#334155",
-                borderRadius: "8px",
-                color: "#f8fafc",
+                backgroundColor: "var(--bg-card)",
+                borderColor: "var(--border-color)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--text-main)",
                 fontSize: "0.8rem",
               }}
             />
             <Line
               yAxisId="left"
               type="monotone"
-              dataKey="p95"
-              name="P95 Latency (ms)"
+              dataKey="avgMs"
+              name="Avg Latency (ms)"
               stroke="#38bdf8"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+            />
+            <Line
+              yAxisId="left"
+              type="monotone"
+              dataKey="p95Ms"
+              name="P95 Latency (ms)"
+              stroke="#f59e0b"
               strokeWidth={2}
               dot={{ r: 4 }}
             />
@@ -302,6 +312,20 @@ export default function App() {
 
   const [concurrency, setConcurrency] = useState(5);
   const [totalRequests, setTotalRequests] = useState(20);
+  const [useMultiCore, setUseMultiCore] = useState(false);
+  const [workerCount, setWorkerCount] = useState(4);
+
+  const [enableSlaBudget, setEnableSlaBudget] = useState(false);
+  const [targetP95, setTargetP95] = useState(500);
+  const [targetP99, setTargetP99] = useState(1000);
+  const [maxErrorRate, setMaxErrorRate] = useState(1.0);
+  const [minApdex, setMinApdex] = useState(0.85);
+
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importInput, setImportInput] = useState("");
+  const [importError, setImportError] = useState("");
+  const [parsedEndpoints, setParsedEndpoints] = useState([]);
+
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
@@ -387,8 +411,8 @@ export default function App() {
     connectWs();
 
     return () => {
-      if (wsRef.current) wsRef.current.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (wsRef.current) wsRef.current.close();
     };
   }, []);
 
@@ -397,24 +421,27 @@ export default function App() {
       const res = await fetch("http://localhost:4000/api/test-runs");
       const data = await res.json();
       if (data.success) {
-        setTestRuns(data.runs || []);
+        setTestRuns(data.runs);
+        if (data.runs.length >= 2) {
+          setCompareRunA(String(data.runs[0].id));
+          setCompareRunB(String(data.runs[1].id));
+        }
       }
-    } catch (err) {
-      console.error("Failed to fetch test runs:", err);
+    } catch {
+      void 0;
     }
   }
 
-  async function handleViewRunDetail(runId) {
+  async function fetchRunDetail(runId) {
     setDetailLoading(true);
-    setSelectedRunDetail(null);
     try {
       const res = await fetch(`http://localhost:4000/api/test-runs/${runId}`);
       const data = await res.json();
       if (data.success) {
         setSelectedRunDetail(data);
       }
-    } catch (err) {
-      console.error("Failed to fetch run detail:", err);
+    } catch {
+      void 0;
     } finally {
       setDetailLoading(false);
     }
@@ -422,25 +449,24 @@ export default function App() {
 
   async function handleDeleteRun(e, runId) {
     e.stopPropagation();
-    if (!window.confirm(`Delete test run #${runId}?`)) return;
     try {
       const res = await fetch(`http://localhost:4000/api/test-runs/${runId}`, {
         method: "DELETE",
       });
       const data = await res.json();
       if (data.success) {
-        fetchTestRuns();
+        setTestRuns((prev) => prev.filter((r) => r.id !== runId));
         if (selectedRunDetail?.run?.id === runId) {
           setSelectedRunDetail(null);
         }
       }
-    } catch (err) {
-      console.error("Failed to delete run:", err);
+    } catch {
+      void 0;
     }
   }
 
-  async function handleClearAllHistory() {
-    if (!window.confirm("Are you sure you want to clear all test history?")) return;
+  async function handleClearAllRuns() {
+    if (!window.confirm("Are you sure you want to clear all test run history?")) return;
     try {
       const res = await fetch("http://localhost:4000/api/test-runs", {
         method: "DELETE",
@@ -450,32 +476,75 @@ export default function App() {
         setTestRuns([]);
         setSelectedRunDetail(null);
       }
-    } catch (err) {
-      console.error("Failed to clear history:", err);
+    } catch {
+      void 0;
     }
   }
 
   function parseJsonPayloads() {
     let parsedHeaders = {};
-    let parsedBody = null;
-
     if (headers.trim()) {
       try {
         parsedHeaders = JSON.parse(headers);
-      } catch (err) {
-        throw new Error("Headers must be valid JSON: " + err.message, { cause: err });
+      } catch {
+        throw new Error("Headers must be valid JSON format (e.g. {\"Authorization\": \"Bearer ...\"})");
       }
     }
 
+    let parsedBody = null;
     if (body.trim()) {
       try {
         parsedBody = JSON.parse(body);
-      } catch (err) {
-        throw new Error("Body must be valid JSON: " + err.message, { cause: err });
+      } catch {
+        parsedBody = body;
       }
     }
 
     return { parsedHeaders, parsedBody };
+  }
+
+  function handleImportSubmit() {
+    setImportError("");
+    try {
+      const result = autoDetectAndParse(importInput);
+      if (result.type === "curl") {
+        const item = result.items[0];
+        setMethod(item.method);
+        setUrl(item.url);
+        setHeaders(JSON.stringify(item.headers, null, 2));
+        setBody(typeof item.body === "object" ? JSON.stringify(item.body, null, 2) : String(item.body || ""));
+        setShowImportModal(false);
+      } else {
+        setParsedEndpoints(result.items);
+      }
+    } catch (err) {
+      setImportError(err.message || "Failed to parse input.");
+    }
+  }
+
+  function handleSelectImportedEndpoint(ep, targetMode = "single") {
+    setMethod(ep.method);
+    setUrl(ep.url);
+    setHeaders(JSON.stringify(ep.headers || {}, null, 2));
+    setBody(typeof ep.body === "object" ? JSON.stringify(ep.body, null, 2) : String(ep.body || ""));
+    setMode(targetMode);
+    setShowImportModal(false);
+  }
+
+  function handleImportAsWorkflow() {
+    if (!parsedEndpoints || parsedEndpoints.length === 0) return;
+    const steps = parsedEndpoints.map((ep) => ({
+      name: ep.name || `${ep.method} ${ep.url}`,
+      request: {
+        method: ep.method,
+        url: ep.url,
+        headers: ep.headers,
+        body: ep.body ? (typeof ep.body === "string" ? JSON.parse(ep.body || "{}") : ep.body) : undefined,
+      },
+    }));
+    setWorkflowSteps(JSON.stringify(steps, null, 2));
+    setMode("workflow");
+    setShowImportModal(false);
   }
 
   async function handleSendSingleRequest() {
@@ -526,6 +595,15 @@ export default function App() {
       return;
     }
 
+    const slaBudget = enableSlaBudget
+      ? {
+          targetP95Ms: Number(targetP95) || 0,
+          targetP99Ms: Number(targetP99) || 0,
+          maxErrorRate: Number(maxErrorRate) || 0,
+          minApdex: Number(minApdex) || 0,
+        }
+      : null;
+
     try {
       const res = await fetch("http://localhost:4000/api/load-test", {
         method: "POST",
@@ -538,6 +616,9 @@ export default function App() {
           headers: payloads.parsedHeaders,
           body: payloads.parsedBody,
           timeout: Number(timeout) || 10000,
+          useMultiCore,
+          workerCount: Number(workerCount) || 4,
+          slaBudget,
         }),
       });
       const data = await res.json();
@@ -559,28 +640,19 @@ export default function App() {
         `http://localhost:4000/api/compare?runA=${compareRunA}&runB=${compareRunB}`
       );
       const data = await res.json();
-      setCompareResult(data);
+      if (data.success) {
+        setCompareResult(data);
+      } else {
+        alert(data.error || "Comparison failed");
+      }
     } catch (err) {
-      setCompareResult({ success: false, error: err.message });
+      alert(err.message);
     } finally {
       setCompareLoading(false);
     }
   }
 
   async function handleRunScalingTest() {
-    const levels = scalingLevels
-      .split(",")
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n) && n > 0);
-
-    if (levels.length === 0) {
-      setScalingResult({
-        success: false,
-        error: "Enter valid comma-separated concurrency levels, e.g. 1, 5, 10, 25",
-      });
-      return;
-    }
-
     setScalingLoading(true);
     setScalingResult(null);
 
@@ -588,7 +660,18 @@ export default function App() {
     try {
       payloads = parseJsonPayloads();
     } catch (err) {
-      setScalingResult({ success: false, error: err.message });
+      alert(err.message);
+      setScalingLoading(false);
+      return;
+    }
+
+    const levels = scalingLevels
+      .split(",")
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n) && n > 0);
+
+    if (levels.length === 0) {
+      alert("Please provide at least one valid concurrency level (e.g. 1, 5, 10)");
       setScalingLoading(false);
       return;
     }
@@ -608,42 +691,36 @@ export default function App() {
         }),
       });
       const data = await res.json();
-      setScalingResult(data);
+      if (data.success) {
+        setScalingResult(data);
+      } else {
+        alert(data.error || "Scaling test failed");
+      }
     } catch (err) {
-      setScalingResult({ success: false, error: err.message });
+      alert(err.message);
     } finally {
       setScalingLoading(false);
     }
   }
 
   async function handleRunWorkflow() {
-    let steps;
-    try {
-      steps = JSON.parse(workflowSteps);
-    } catch (err) {
-      setWorkflowResult({
-        success: false,
-        error: "Workflow steps JSON is invalid: " + err.message,
-      });
-      return;
-    }
-
-    if (!Array.isArray(steps) || steps.length === 0) {
-      setWorkflowResult({
-        success: false,
-        error: "Workflow steps must be a non-empty array",
-      });
-      return;
-    }
-
     setWorkflowLoading(true);
     setWorkflowResult(null);
+
+    let parsedSteps;
+    try {
+      parsedSteps = JSON.parse(workflowSteps);
+    } catch {
+      alert("Workflow steps must be a valid JSON array");
+      setWorkflowLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch("http://localhost:4000/api/workflow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ steps }),
+        body: JSON.stringify({ steps: parsedSteps }),
       });
       const data = await res.json();
       setWorkflowResult(data);
@@ -655,9 +732,7 @@ export default function App() {
   }
 
   function exportResultsAsJson(data) {
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const href = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = href;
@@ -668,14 +743,9 @@ export default function App() {
 
   function exportResultsAsCsv(results) {
     if (!results || results.length === 0) return;
-    const header = "RequestIndex,DurationMs,Status,Success,Error\n";
+    const header = "RequestIndex,DurationMs,Status,Success\n";
     const rows = results
-      .map(
-        (r) =>
-          `${r.requestIndex ?? ""},${r.durationMs ?? ""},${r.status ?? ""},${
-            r.success ? "1" : "0"
-          },"${(r.error || "").replace(/"/g, '""')}"`
-      )
+      .map((r) => `${(r.requestIndex ?? 0) + 1},${r.durationMs ?? 0},${r.status ?? "ERR"},${r.success ? 1 : 0}`)
       .join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
     const href = URL.createObjectURL(blob);
@@ -699,9 +769,25 @@ export default function App() {
           </div>
         </div>
 
-        <div className="ws-status">
-          <div className={`status-dot ${wsConnected ? "connected" : ""}`} />
-          <span>{wsConnected ? "Live Socket Active" : "Socket Reconnecting..."}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button
+            className="btn-secondary"
+            style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
+            onClick={() => {
+              setImportInput("");
+              setImportError("");
+              setParsedEndpoints([]);
+              setShowImportModal(true);
+            }}
+          >
+            <span>📥</span>
+            <span>Import (cURL / Swagger / Postman)</span>
+          </button>
+
+          <div className="ws-status">
+            <div className={`status-dot ${wsConnected ? "connected" : ""}`} />
+            <span>{wsConnected ? "Live Socket Active" : "Socket Reconnecting..."}</span>
+          </div>
         </div>
       </header>
 
@@ -741,7 +827,7 @@ export default function App() {
                 : "Concurrency Scaling Benchmark"}
             </span>
             <span style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
-              {mode === "load" && `Target: ${totalRequests} requests @ ${concurrency} concurrent`}
+              {mode === "load" && `Target: ${totalRequests} requests @ ${concurrency} concurrent ${useMultiCore ? `(${workerCount} worker threads)` : ""}`}
             </span>
           </div>
 
@@ -761,9 +847,9 @@ export default function App() {
             <input
               type="text"
               className="url-input"
-              placeholder="https://api.example.com/endpoint"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://api.example.com/endpoint"
             />
 
             {mode === "single" && (
@@ -798,43 +884,134 @@ export default function App() {
           </div>
 
           {mode === "load" && (
-            <div className="options-row">
-              <div className="option-group">
-                <label>Concurrency (Virtual Users):</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="500"
-                  className="option-input"
-                  value={concurrency}
-                  onChange={(e) => setConcurrency(Number(e.target.value))}
-                />
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", marginTop: "0.75rem" }}>
+              <div className="options-row">
+                <div className="option-group">
+                  <label>Concurrency (VUs):</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    className="option-input"
+                    value={concurrency}
+                    onChange={(e) => setConcurrency(Number(e.target.value))}
+                  />
+                </div>
+
+                <div className="option-group">
+                  <label>Total Requests:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50000"
+                    className="option-input"
+                    style={{ width: "90px" }}
+                    value={totalRequests}
+                    onChange={(e) => setTotalRequests(Number(e.target.value))}
+                  />
+                </div>
+
+                <div className="option-group">
+                  <label>Timeout (ms):</label>
+                  <input
+                    type="number"
+                    min="500"
+                    step="500"
+                    className="option-input"
+                    style={{ width: "90px" }}
+                    value={timeout}
+                    onChange={(e) => setTimeoutVal(Number(e.target.value))}
+                  />
+                </div>
+
+                <div className="option-group" style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={useMultiCore}
+                      onChange={(e) => setUseMultiCore(e.target.checked)}
+                    />
+                    <span>⚡ Multi-Core Engine</span>
+                  </label>
+                  {useMultiCore && (
+                    <select
+                      value={workerCount}
+                      onChange={(e) => setWorkerCount(Number(e.target.value))}
+                      className="option-input"
+                      style={{ padding: "0.2rem 0.4rem" }}
+                    >
+                      <option value="2">2 Threads</option>
+                      <option value="4">4 Threads</option>
+                      <option value="8">8 Threads</option>
+                      <option value="16">16 Threads</option>
+                    </select>
+                  )}
+                </div>
               </div>
 
-              <div className="option-group">
-                <label>Total Requests:</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50000"
-                  className="option-input"
-                  style={{ width: "90px" }}
-                  value={totalRequests}
-                  onChange={(e) => setTotalRequests(Number(e.target.value))}
-                />
-              </div>
+              <div className="budget-collapsible">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={enableSlaBudget}
+                      onChange={(e) => setEnableSlaBudget(e.target.checked)}
+                    />
+                    <span>🎯 Enforce SLA Performance Budget & Assertions</span>
+                  </label>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+                    {enableSlaBudget ? "SLA Rules Active" : "Disabled"}
+                  </span>
+                </div>
 
-              <div className="option-group">
-                <label>Timeout (ms):</label>
-                <input
-                  type="number"
-                  min="500"
-                  step="500"
-                  className="option-input"
-                  style={{ width: "90px" }}
-                  value={timeout}
-                  onChange={(e) => setTimeoutVal(Number(e.target.value))}
-                />
+                {enableSlaBudget && (
+                  <div className="budget-inputs-grid">
+                    <div className="option-group">
+                      <label>Target P95 Latency (ms):</label>
+                      <input
+                        type="number"
+                        min="10"
+                        className="option-input"
+                        value={targetP95}
+                        onChange={(e) => setTargetP95(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="option-group">
+                      <label>Target P99 Latency (ms):</label>
+                      <input
+                        type="number"
+                        min="10"
+                        className="option-input"
+                        value={targetP99}
+                        onChange={(e) => setTargetP99(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="option-group">
+                      <label>Max Error Rate (%):</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        className="option-input"
+                        value={maxErrorRate}
+                        onChange={(e) => setMaxErrorRate(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="option-group">
+                      <label>Min Apdex Score:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        className="option-input"
+                        value={minApdex}
+                        onChange={(e) => setMinApdex(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -858,6 +1035,7 @@ export default function App() {
                   type="number"
                   min="1"
                   className="option-input"
+                  style={{ width: "90px" }}
                   value={scalingReqs}
                   onChange={(e) => setScalingReqs(Number(e.target.value))}
                 />
@@ -868,6 +1046,7 @@ export default function App() {
                 <input
                   type="number"
                   min="500"
+                  step="500"
                   className="option-input"
                   style={{ width: "90px" }}
                   value={timeout}
@@ -877,7 +1056,7 @@ export default function App() {
             </div>
           )}
 
-          <div>
+          <div style={{ marginTop: "1rem" }}>
             <div className="sub-tabs">
               <button
                 className={`sub-tab ${activeSubTab === "headers" ? "active" : ""}`}
@@ -891,92 +1070,60 @@ export default function App() {
               >
                 Request Body (JSON)
               </button>
-              {mode === "single" && (
-                <button
-                  className={`sub-tab ${activeSubTab === "settings" ? "active" : ""}`}
-                  onClick={() => setActiveSubTab("settings")}
-                >
-                  Timeout
-                </button>
-              )}
             </div>
 
-            <div style={{ marginTop: "0.75rem" }}>
-              {activeSubTab === "headers" && (
-                <textarea
-                  rows={4}
-                  style={{ width: "100%" }}
-                  placeholder='{"Authorization": "Bearer token", "Custom-Header": "value"}'
-                  value={headers}
-                  onChange={(e) => setHeaders(e.target.value)}
-                />
-              )}
+            {activeSubTab === "headers" && (
+              <textarea
+                className="code-editor"
+                value={headers}
+                onChange={(e) => setHeaders(e.target.value)}
+                placeholder='{\n  "Authorization": "Bearer token"\n}'
+              />
+            )}
 
-              {activeSubTab === "body" && (
-                <textarea
-                  rows={5}
-                  style={{ width: "100%" }}
-                  placeholder='{\n  "title": "Example Post",\n  "body": "Lorem ipsum"\n}'
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                />
-              )}
-
-              {activeSubTab === "settings" && mode === "single" && (
-                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                  <label style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                    Request Timeout (ms):
-                  </label>
-                  <input
-                    type="number"
-                    min="500"
-                    style={{ width: "110px" }}
-                    value={timeout}
-                    onChange={(e) => setTimeoutVal(Number(e.target.value))}
-                  />
-                </div>
-              )}
-            </div>
+            {activeSubTab === "body" && (
+              <textarea
+                className="code-editor"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder='{\n  "title": "foo",\n  "body": "bar",\n  "userId": 1\n}'
+              />
+            )}
           </div>
         </section>
       )}
 
       {loading && mode === "load" && (
-        <div className="progress-container">
-          <div className="progress-header">
-            <span>Executing Concurrent Requests...</span>
-            <span style={{ fontFamily: "var(--font-mono)" }}>
-              {progress.completed} / {progress.total} (
-              {progress.total > 0
-                ? Math.round((progress.completed / progress.total) * 100)
-                : 0}
-              %)
-            </span>
+        <section className="card">
+          <div className="progress-container">
+            <div className="progress-labels">
+              <span>Executing Concurrent Requests...</span>
+              <span>
+                {progress.completed} / {progress.total} (
+                {Math.round((progress.completed / (progress.total || 1)) * 100)}%)
+              </span>
+            </div>
+            <div className="progress-track">
+              <div
+                className="progress-fill"
+                style={{
+                  width: `${Math.round((progress.completed / (progress.total || 1)) * 100)}%`,
+                }}
+              />
+            </div>
           </div>
-          <div className="progress-bar-bg">
-            <div
-              className="progress-bar-fill"
-              style={{
-                width: `${
-                  progress.total > 0
-                    ? (progress.completed / progress.total) * 100
-                    : 0
-                }%`,
-              }}
-            />
-          </div>
-        </div>
+        </section>
       )}
 
       {mode === "single" && response && (
         <section className="card">
           <div className="card-title">
-            <span>Response</span>
+            <span>Response Inspector</span>
             <div className="response-header">
               <StatusBadge status={response.status} />
-              {response.durationMs !== undefined && (
-                <span className="badge badge-3xx">{response.durationMs}ms</span>
-              )}
+              <span style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>
+                Latency: <strong>{response.durationMs}ms</strong>
+              </span>
             </div>
           </div>
 
@@ -1038,7 +1185,22 @@ export default function App() {
         <section className="card">
           <div className="card-title">
             <span>Load Test Benchmark Results</span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <button
+                className="btn-primary"
+                style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+                onClick={() =>
+                  generateExecutivePdfReport({
+                    run: { url, method, concurrency, total_requests: totalRequests },
+                    metrics: response.metrics,
+                    apdex: response.apdex,
+                    insights: response.insights,
+                    slaVerdict: response.slaVerdict,
+                  })
+                }
+              >
+                📄 Export Executive PDF
+              </button>
               <button
                 className="btn-secondary"
                 onClick={() => exportResultsAsJson(response)}
@@ -1075,6 +1237,8 @@ export default function App() {
             <MetricCard label="Duration" value={response.totalDurationMs} unit="ms" />
           </div>
 
+          {response.slaVerdict && <SlaVerdictCard slaVerdict={response.slaVerdict} />}
+
           {response.apdex && <ApdexCard apdex={response.apdex} />}
 
           {response.insights && response.insights.length > 0 && (
@@ -1098,192 +1262,143 @@ export default function App() {
       {mode === "scaling" && scalingResult && (
         <section className="card">
           <div className="card-title">
-            <span>Scaling Benchmark Results</span>
+            <span>Scaling Matrix Results (Group #{scalingResult.scalingGroupId})</span>
+            <button
+              className="btn-primary"
+              style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+              onClick={() =>
+                generateExecutivePdfReport({
+                  run: { url, method, concurrency: "Stepped Matrix", total_requests: scalingReqs * scalingResult.runs.length },
+                  metrics: scalingResult.runs[scalingResult.runs.length - 1]?.metrics,
+                  apdex: null,
+                  insights: scalingResult.insights,
+                  slaVerdict: null,
+                })
+              }
+            >
+              📄 Export Executive PDF
+            </button>
           </div>
 
-          {!scalingResult.success && (
-            <div className="insight-item error">
-              <span>⚠️</span>
-              <div>{scalingResult.error}</div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Concurrency</th>
+                <th>Avg Latency</th>
+                <th>P50</th>
+                <th>P95</th>
+                <th>P99</th>
+                <th>Throughput</th>
+                <th>Success Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scalingResult.runs.map((r) => (
+                <tr key={r.concurrency}>
+                  <td>
+                    <strong>{r.concurrency} VUs</strong>
+                  </td>
+                  <td>{r.metrics.avgMs}ms</td>
+                  <td>{r.metrics.p50}ms</td>
+                  <td>{r.metrics.p95}ms</td>
+                  <td>{r.metrics.p99}ms</td>
+                  <td style={{ color: "var(--success)" }}>{r.metrics.throughputRps} rps</td>
+                  <td>{r.metrics.successRate}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {scalingResult.insights && scalingResult.insights.length > 0 && (
+            <div style={{ marginTop: "1rem" }}>
+              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                Sweet Spot & Capacity Saturation Analysis
+              </div>
+              <InsightsList insights={scalingResult.insights} />
             </div>
           )}
 
-          {scalingResult.success && scalingResult.runs && (
-            <>
-              <ScalingChart runs={scalingResult.runs} />
-
-              {scalingResult.insights && scalingResult.insights.length > 0 && (
-                <div>
-                  <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
-                    Concurrency Bottleneck & Scaling Insights
-                  </div>
-                  <InsightsList insights={scalingResult.insights} />
-                </div>
-              )}
-
-              <div style={{ marginTop: "1rem" }}>
-                <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
-                  Per-Level Metric Breakdown
-                </div>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Concurrency</th>
-                      <th>Requests</th>
-                      <th>Avg Latency</th>
-                      <th>P50</th>
-                      <th>P95</th>
-                      <th>P99</th>
-                      <th>Throughput</th>
-                      <th>Success Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scalingResult.runs.map((run, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 600, color: "var(--accent)" }}>
-                          {run.concurrency} VUs
-                        </td>
-                        <td>{run.metrics.totalRequests}</td>
-                        <td>{run.metrics.avgMs}ms</td>
-                        <td>{run.metrics.p50}ms</td>
-                        <td style={{ color: "#38bdf8" }}>{run.metrics.p95}ms</td>
-                        <td>{run.metrics.p99}ms</td>
-                        <td style={{ color: "#34d399", fontWeight: 600 }}>
-                          {run.metrics.throughputRps} req/s
-                        </td>
-                        <td>{run.metrics.successRate}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+          <ScalingChart runs={scalingResult.runs} />
         </section>
       )}
 
       {mode === "workflow" && (
         <section className="card">
           <div className="card-title">
-            <span>Multi-Step Workflow Chaining</span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                className="btn-secondary"
-                onClick={() =>
-                  setWorkflowSteps(
-                    JSON.stringify(
-                      [
-                        {
-                          name: "Get Post",
-                          request: {
-                            method: "GET",
-                            url: "https://jsonplaceholder.typicode.com/posts/1",
-                          },
-                          extract: { postId: "body.id", userId: "body.userId" },
-                        },
-                        {
-                          name: "Get User Info",
-                          request: {
-                            method: "GET",
-                            url: "https://jsonplaceholder.typicode.com/users/{{userId}}",
-                          },
-                          extract: { email: "body.email" },
-                        },
-                        {
-                          name: "Create Comment",
-                          request: {
-                            method: "POST",
-                            url: "https://jsonplaceholder.typicode.com/comments",
-                            body: {
-                              postId: "{{postId}}",
-                              name: "Automated Feedback",
-                              email: "{{email}}",
-                              body: "Great post!",
-                            },
-                          },
-                        },
-                      ],
-                      null,
-                      2
-                    )
-                  )
-                }
-              >
-                Load Preset (3-Step)
-              </button>
-            </div>
-          </div>
-
-          <div className="card-subtitle">
-            Define sequential API steps. Extracted values from earlier responses can be
-            referenced in subsequent steps using <code>{"{{variableName}}"}</code>.
-          </div>
-
-          <textarea
-            rows={14}
-            value={workflowSteps}
-            onChange={(e) => setWorkflowSteps(e.target.value)}
-            style={{ width: "100%", fontSize: "0.825rem" }}
-          />
-
-          <div>
+            <span>Chained Multi-Step Workflow Engine</span>
             <button
               className="btn-primary"
               onClick={handleRunWorkflow}
               disabled={workflowLoading}
             >
-              {workflowLoading ? "Executing Workflow Chain..." : "Execute Workflow"}
+              {workflowLoading ? "Executing Steps..." : "Run Workflow"}
             </button>
           </div>
 
-          {workflowResult && (
-            <div style={{ marginTop: "1rem" }}>
-              {!workflowResult.success && (
-                <div className="insight-item error">
-                  <span>⚠️</span>
-                  <div>{workflowResult.error}</div>
-                </div>
-              )}
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "0.25rem 0 0.75rem" }}>
+            Chain dependent requests where downstream steps dynamically extract values from upstream responses using{" "}
+            <code>&#123;&#123;variableName&#125;&#125;</code> template syntax.
+          </p>
 
-              {workflowResult.success && (
-                <>
+          <textarea
+            className="code-editor"
+            style={{ height: "240px" }}
+            value={workflowSteps}
+            onChange={(e) => setWorkflowSteps(e.target.value)}
+          />
+
+          {workflowResult && (
+            <div style={{ marginTop: "1.25rem" }}>
+              <div className="card-title">
+                <span>Workflow Execution Summary</span>
+                <StatusBadge status={workflowResult.success ? 200 : 500} />
+              </div>
+
+              <div className="metrics-grid">
+                <MetricCard label="Total Steps" value={workflowResult.totalSteps} />
+                <MetricCard
+                  label="Passed Steps"
+                  value={workflowResult.completedSteps}
+                  highlight={workflowResult.success}
+                />
+                <MetricCard
+                  label="Total Duration"
+                  value={workflowResult.totalDurationMs}
+                  unit="ms"
+                />
+              </div>
+
+              {workflowResult.stepResults && (
+                <div style={{ marginTop: "1rem" }}>
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Step</th>
+                        <th>Step #</th>
+                        <th>Name</th>
+                        <th>Method & URL</th>
                         <th>Status</th>
                         <th>Duration</th>
-                        <th>Result</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {workflowResult.steps.map((s, idx) => (
-                        <tr key={idx}>
-                          <td style={{ fontWeight: 600 }}>{s.name}</td>
+                      {workflowResult.stepResults.map((s) => (
+                        <tr key={s.stepIndex}>
+                          <td>#{s.stepIndex + 1}</td>
+                          <td>
+                            <strong>{s.name}</strong>
+                          </td>
+                          <td style={{ fontSize: "0.8rem", fontFamily: "var(--font-mono)" }}>
+                            {s.request?.method} {s.request?.url}
+                          </td>
                           <td>
                             <StatusBadge status={s.status} />
                           </td>
-                          <td style={{ fontFamily: "var(--font-mono)" }}>
-                            {s.durationMs}ms
-                          </td>
-                          <td style={{ color: s.success ? "var(--success)" : "var(--danger)" }}>
-                            {s.success ? "Passed" : s.error || "Failed"}
-                          </td>
+                          <td style={{ fontFamily: "var(--font-mono)" }}>{s.durationMs}ms</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-
-                  <div style={{ marginTop: "1.25rem" }}>
-                    <div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.5rem" }}>
-                      Extracted Context Variables:
-                    </div>
-                    <pre className="raw-json-box">
-                      {JSON.stringify(workflowResult.context, null, 2)}
-                    </pre>
-                  </div>
-                </>
+                </div>
               )}
             </div>
           )}
@@ -1293,94 +1408,102 @@ export default function App() {
       {mode === "compare" && (
         <section className="card">
           <div className="card-title">
-            <span>Compare Two Benchmark Runs</span>
-          </div>
-          <div className="card-subtitle">
-            Compare metrics between baseline and new test runs to evaluate performance regressions.
+            <span>Regression & Diff Engine (A/B Test Run Comparison)</span>
           </div>
 
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-            <select
-              style={{ flex: 1, minWidth: "220px" }}
-              value={compareRunA}
-              onChange={(e) => setCompareRunA(e.target.value)}
-            >
-              <option value="">Select Baseline Run A (Before)</option>
-              {testRuns.map((r) => (
-                <option key={r.id} value={r.id}>
-                  #{r.id} | {r.method} {r.url} (P95: {r.p95}ms, {r.concurrency} VU)
-                </option>
-              ))}
-            </select>
+          <div className="request-bar">
+            <div className="option-group" style={{ flex: 1 }}>
+              <label>Baseline Run (Run A):</label>
+              <select
+                className="option-input"
+                style={{ width: "100%" }}
+                value={compareRunA}
+                onChange={(e) => setCompareRunA(e.target.value)}
+              >
+                <option value="">Select Baseline Run</option>
+                {testRuns.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    #{r.id} — {r.method} {r.url} ({r.concurrency} VUs, {r.avg_ms}ms avg)
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            <select
-              style={{ flex: 1, minWidth: "220px" }}
-              value={compareRunB}
-              onChange={(e) => setCompareRunB(e.target.value)}
-            >
-              <option value="">Select Target Run B (After)</option>
-              {testRuns.map((r) => (
-                <option key={r.id} value={r.id}>
-                  #{r.id} | {r.method} {r.url} (P95: {r.p95}ms, {r.concurrency} VU)
-                </option>
-              ))}
-            </select>
+            <div className="option-group" style={{ flex: 1 }}>
+              <label>Comparison Run (Run B):</label>
+              <select
+                className="option-input"
+                style={{ width: "100%" }}
+                value={compareRunB}
+                onChange={(e) => setCompareRunB(e.target.value)}
+              >
+                <option value="">Select Comparison Run</option>
+                {testRuns.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    #{r.id} — {r.method} {r.url} ({r.concurrency} VUs, {r.avg_ms}ms avg)
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <button
               className="btn-primary"
+              style={{ alignSelf: "flex-end" }}
               onClick={handleCompare}
-              disabled={!compareRunA || !compareRunB || compareLoading}
+              disabled={compareLoading || !compareRunA || !compareRunB}
             >
-              {compareLoading ? "Diffing..." : "Compare Runs"}
+              {compareLoading ? "Analyzing..." : "Compare Runs"}
             </button>
           </div>
 
-          {compareResult && compareResult.success && (
-            <div style={{ marginTop: "1rem" }}>
+          {compareResult && compareResult.comparison && (
+            <div style={{ marginTop: "1.25rem" }}>
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Metric</th>
-                    <th>Before (Run #{compareRunA})</th>
-                    <th>After (Run #{compareRunB})</th>
-                    <th>Delta</th>
+                    <th>Run #{compareResult.runA.id} (Before)</th>
+                    <th>Run #{compareResult.runB.id} (After)</th>
+                    <th>Difference</th>
+                    <th>% Change</th>
                     <th>Verdict</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(compareResult.comparison).map(([metric, data]) => (
-                    <tr key={metric}>
-                      <td style={{ fontWeight: 600 }}>{metric.toUpperCase()}</td>
-                      <td style={{ fontFamily: "var(--font-mono)" }}>{data.before}</td>
-                      <td style={{ fontFamily: "var(--font-mono)" }}>{data.after}</td>
-                      <td
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          color:
-                            data.diff > 0
-                              ? "var(--danger)"
-                              : data.diff < 0
-                              ? "var(--success)"
-                              : "inherit",
-                        }}
-                      >
-                        {data.diff > 0 ? `+${data.diff}` : data.diff} ({data.percentChange}%)
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${
-                            data.verdict === "improved"
-                              ? "badge-2xx"
-                              : data.verdict === "degraded"
-                              ? "badge-5xx"
-                              : "badge-3xx"
-                          }`}
-                        >
-                          {data.verdict.toUpperCase()}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {Object.entries(compareResult.comparison).map(([metric, diff]) => {
+                    const isImproved = diff.verdict === "improved";
+                    const isDegraded = diff.verdict === "degraded";
+                    return (
+                      <tr key={metric}>
+                        <td>
+                          <strong>{metric}</strong>
+                        </td>
+                        <td>{diff.before}</td>
+                        <td>{diff.after}</td>
+                        <td style={{ fontFamily: "var(--font-mono)" }}>
+                          {diff.diff > 0 ? `+${diff.diff}` : diff.diff}
+                        </td>
+                        <td style={{ fontFamily: "var(--font-mono)" }}>
+                          {diff.percentChange > 0
+                            ? `+${diff.percentChange}%`
+                            : `${diff.percentChange}%`}
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              isImproved
+                                ? "badge-2xx"
+                                : isDegraded
+                                ? "badge-4xx"
+                                : "badge-3xx"
+                            }`}
+                          >
+                            {diff.verdict.toUpperCase()}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1392,34 +1515,35 @@ export default function App() {
         <section className="card">
           <div className="card-title">
             <span>Historical Test Runs</span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button className="btn-secondary" onClick={fetchTestRuns}>
-                Refresh
+            {testRuns.length > 0 && (
+              <button
+                className="btn-danger"
+                style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
+                onClick={handleClearAllRuns}
+              >
+                Clear History
               </button>
-              {testRuns.length > 0 && (
-                <button className="btn-danger" onClick={handleClearAllHistory}>
-                  Clear All History
-                </button>
-              )}
-            </div>
+            )}
           </div>
 
           {testRuns.length === 0 ? (
-            <div style={{ color: "var(--text-dim)", padding: "2rem", textAlign: "center" }}>
-              No saved test runs found. Run a load test to view history here.
+            <div style={{ color: "var(--text-dim)", textAlign: "center", padding: "2rem" }}>
+              No test runs recorded yet. Execute a Load Test to persist runs here.
             </div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Method & Endpoint</th>
+                  <th>Method & URL</th>
                   <th>Concurrency</th>
+                  <th>Requests</th>
+                  <th>Avg Latency</th>
                   <th>P95 Latency</th>
                   <th>Throughput</th>
                   <th>Success Rate</th>
-                  <th>Created At</th>
-                  <th>Action</th>
+                  <th>Timestamp</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1427,25 +1551,20 @@ export default function App() {
                   <tr
                     key={r.id}
                     className="clickable"
-                    onClick={() => handleViewRunDetail(r.id)}
+                    onClick={() => fetchRunDetail(r.id)}
                   >
-                    <td style={{ fontWeight: 600, color: "var(--accent)" }}>#{r.id}</td>
-                    <td
-                      style={{
-                        maxWidth: "260px",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      <span className={`badge method-${r.method}`} style={{ marginRight: "0.5rem" }}>
+                    <td>#{r.id}</td>
+                    <td style={{ fontFamily: "var(--font-mono)" }}>
+                      <span className={`method-${r.method}`} style={{ fontWeight: 700, marginRight: "0.5rem" }}>
                         {r.method}
                       </span>
                       {r.url}
                     </td>
-                    <td>{r.concurrency} VU</td>
-                    <td style={{ color: "#38bdf8", fontWeight: 600 }}>{r.p95}ms</td>
-                    <td>{r.throughput_rps} req/s</td>
+                    <td>{r.concurrency} VUs</td>
+                    <td>{r.total_requests}</td>
+                    <td>{r.avg_ms}ms</td>
+                    <td>{r.p95}ms</td>
+                    <td>{r.throughput_rps} rps</td>
                     <td>
                       <span className={r.success_rate >= 99 ? "badge badge-2xx" : "badge badge-4xx"}>
                         {r.success_rate}%
@@ -1479,12 +1598,29 @@ export default function App() {
                 Test Run #{selectedRunDetail.run.id} Details: {selectedRunDetail.run.method}{" "}
                 {selectedRunDetail.run.url}
               </span>
-              <button
-                className="btn-secondary"
-                onClick={() => setSelectedRunDetail(null)}
-              >
-                Close
-              </button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  className="btn-primary"
+                  style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+                  onClick={() =>
+                    generateExecutivePdfReport({
+                      run: selectedRunDetail.run,
+                      metrics: selectedRunDetail.metrics,
+                      apdex: selectedRunDetail.apdex,
+                      insights: selectedRunDetail.insights,
+                      slaVerdict: selectedRunDetail.slaVerdict,
+                    })
+                  }
+                >
+                  📄 Export Executive PDF
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => setSelectedRunDetail(null)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="metrics-grid">
@@ -1558,6 +1694,88 @@ export default function App() {
                   </div>
                 </div>
               </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="card-title">
+              <span>Import API Definition / Request</span>
+              <button className="btn-secondary" onClick={() => setShowImportModal(false)}>
+                Close
+              </button>
+            </div>
+
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
+              Paste a <strong>cURL command</strong>, <strong>Swagger / OpenAPI JSON</strong>, or a <strong>Postman Collection (v2.1) JSON</strong> to automatically configure tests.
+            </p>
+
+            <textarea
+              className="code-editor"
+              style={{ height: "160px" }}
+              value={importInput}
+              onChange={(e) => setImportInput(e.target.value)}
+              placeholder="curl -X POST https://api.example.com/login -H 'Content-Type: application/json' -d '{&quot;username&quot;: &quot;admin&quot;}'"
+            />
+
+            {importError && (
+              <div className="insight-item error" style={{ margin: 0 }}>
+                <span>⚠️</span>
+                <div>{importError}</div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+              <button className="btn-primary" onClick={handleImportSubmit} disabled={!importInput.trim()}>
+                Parse & Extract Endpoints
+              </button>
+            </div>
+
+            {parsedEndpoints.length > 0 && (
+              <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                    Extracted Endpoints ({parsedEndpoints.length} routes found)
+                  </div>
+                  <button className="btn-secondary" onClick={handleImportAsWorkflow}>
+                    Import All into Workflow Chain
+                  </button>
+                </div>
+
+                <div className="endpoint-picker">
+                  {parsedEndpoints.map((ep, idx) => (
+                    <div key={idx} className="endpoint-picker-item">
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span className={`method-${ep.method}`} style={{ fontWeight: 700, fontSize: "0.8rem" }}>
+                          {ep.method}
+                        </span>
+                        <span style={{ fontSize: "0.8rem", color: "var(--text-main)" }}>
+                          {ep.url}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.4rem" }}>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                          onClick={() => handleSelectImportedEndpoint(ep, "single")}
+                        >
+                          Single Request
+                        </button>
+                        <button
+                          className="btn-primary"
+                          style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                          onClick={() => handleSelectImportedEndpoint(ep, "load")}
+                        >
+                          Load Test
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>

@@ -3,9 +3,10 @@ const cors = require("cors");
 const axios = require("axios");
 const { WebSocketServer } = require('ws');
 const runLoadTest = require("./loadTestRunner");
+const runMultiCoreLoadTest = require("./workerLoadRunner");
 const calculateMetrics = require("./metrics");
 const saveTestRun = require("./saveTestRun");
-const { generateInsights, generateScalingInsights, calculateApdex } = require('./insights');
+const { generateInsights, generateScalingInsights, calculateApdex, evaluateSlaBudget } = require('./insights');
 const db = require('./db');
 const compareRuns = require('./compareRuns');
 const runScalingTest = require('./scalingTest');
@@ -45,6 +46,9 @@ app.post("/api/load-test", async (req, res) => {
     headers = {},
     body = null,
     timeout = 10000,
+    useMultiCore = false,
+    workerCount = 4,
+    slaBudget = null,
   } = req.body;
 
   if (!url) {
@@ -68,7 +72,8 @@ app.post("/api/load-test", async (req, res) => {
   try {
     let lastBroadcastTime = 0;
     const start = performance.now();
-    const results = await runLoadTest({
+    const runner = useMultiCore ? runMultiCoreLoadTest : runLoadTest;
+    const results = await runner({
       url,
       method,
       concurrency: numConcurrency,
@@ -76,6 +81,7 @@ app.post("/api/load-test", async (req, res) => {
       headers,
       body,
       timeout: Number(timeout) || 10000,
+      workerCount: Number(workerCount) || 4,
       onProgress: (result, completed, total) => {
         const now = Date.now();
         if (completed === total || now - lastBroadcastTime > 40) {
@@ -90,6 +96,7 @@ app.post("/api/load-test", async (req, res) => {
     const metrics = calculateMetrics(results, totalDurationMs);
     const apdex = calculateApdex(results, metrics.p50 > 0 ? Math.max(100, Math.round(metrics.p50 * 1.5)) : 250);
     const insights = generateInsights(metrics, null, results);
+    const slaVerdict = evaluateSlaBudget(metrics, apdex, slaBudget);
 
     const testRunId = saveTestRun({
       url,
@@ -108,6 +115,7 @@ app.post("/api/load-test", async (req, res) => {
       metrics,
       apdex,
       insights,
+      slaVerdict,
       results,
     });
   } catch (err) {

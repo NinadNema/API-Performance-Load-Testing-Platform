@@ -374,10 +374,101 @@ function generateScalingInsights(runs) {
   return insights;
 }
 
+function evaluateSlaBudget(metrics, apdex, slaBudget) {
+  if (!slaBudget || typeof slaBudget !== 'object') return null;
+
+  const rules = [];
+  let allPassed = true;
+
+  if (typeof slaBudget.targetP95Ms === 'number' && slaBudget.targetP95Ms > 0) {
+    const passed = (metrics?.p95 ?? 0) <= slaBudget.targetP95Ms;
+    if (!passed) allPassed = false;
+    rules.push({
+      metric: 'P95 Latency',
+      target: `<= ${slaBudget.targetP95Ms} ms`,
+      actual: `${metrics?.p95 ?? 0} ms`,
+      passed,
+      message: passed
+        ? `P95 latency of ${metrics?.p95 ?? 0}ms met the target limit of ${slaBudget.targetP95Ms}ms.`
+        : `P95 latency of ${metrics?.p95 ?? 0}ms exceeded the target limit of ${slaBudget.targetP95Ms}ms by ${(metrics?.p95 ?? 0) - slaBudget.targetP95Ms}ms.`,
+    });
+  }
+
+  if (typeof slaBudget.targetP99Ms === 'number' && slaBudget.targetP99Ms > 0) {
+    const passed = (metrics?.p99 ?? 0) <= slaBudget.targetP99Ms;
+    if (!passed) allPassed = false;
+    rules.push({
+      metric: 'P99 Latency',
+      target: `<= ${slaBudget.targetP99Ms} ms`,
+      actual: `${metrics?.p99 ?? 0} ms`,
+      passed,
+      message: passed
+        ? `P99 latency of ${metrics?.p99 ?? 0}ms met the target limit of ${slaBudget.targetP99Ms}ms.`
+        : `P99 latency of ${metrics?.p99 ?? 0}ms exceeded the target limit of ${slaBudget.targetP99Ms}ms.`,
+    });
+  }
+
+  if (typeof slaBudget.maxErrorRate === 'number' && slaBudget.maxErrorRate >= 0) {
+    const errorRate = 100 - (metrics?.successRate ?? 100);
+    const passed = errorRate <= slaBudget.maxErrorRate;
+    if (!passed) allPassed = false;
+    rules.push({
+      metric: 'Error Rate',
+      target: `<= ${slaBudget.maxErrorRate}%`,
+      actual: `${Math.round(errorRate * 100) / 100}%`,
+      passed,
+      message: passed
+        ? `Error rate of ${Math.round(errorRate * 100) / 100}% is within the acceptable threshold of ${slaBudget.maxErrorRate}%.`
+        : `Error rate of ${Math.round(errorRate * 100) / 100}% violated the maximum budget of ${slaBudget.maxErrorRate}%.`,
+    });
+  }
+
+  if (typeof slaBudget.minApdex === 'number' && slaBudget.minApdex > 0) {
+    const score = apdex?.score ?? 1.0;
+    const passed = score >= slaBudget.minApdex;
+    if (!passed) allPassed = false;
+    rules.push({
+      metric: 'Apdex Score',
+      target: `>= ${slaBudget.minApdex}`,
+      actual: `${score}`,
+      passed,
+      message: passed
+        ? `Apdex user satisfaction score of ${score} satisfied the target of ${slaBudget.minApdex}.`
+        : `Apdex score of ${score} fell below the minimum satisfaction target of ${slaBudget.minApdex}.`,
+    });
+  }
+
+  if (typeof slaBudget.minThroughputRps === 'number' && slaBudget.minThroughputRps > 0) {
+    const rps = metrics?.throughputRps ?? 0;
+    const passed = rps >= slaBudget.minThroughputRps;
+    if (!passed) allPassed = false;
+    rules.push({
+      metric: 'Throughput',
+      target: `>= ${slaBudget.minThroughputRps} RPS`,
+      actual: `${rps} RPS`,
+      passed,
+      message: passed
+        ? `Throughput of ${rps} RPS met the requirement of ${slaBudget.minThroughputRps} RPS.`
+        : `Throughput of ${rps} RPS was lower than the required ${slaBudget.minThroughputRps} RPS.`,
+    });
+  }
+
+  if (rules.length === 0) return null;
+
+  return {
+    passed: allPassed,
+    rules,
+    summary: allPassed
+      ? `All ${rules.length} SLA performance budget rules PASSED.`
+      : `${rules.filter((r) => !r.passed).length} of ${rules.length} SLA performance budget rules FAILED.`,
+  };
+}
+
 module.exports = {
   calculateApdex,
   diagnoseErrorPatterns,
   analyzeLatencyDistribution,
   generateInsights,
   generateScalingInsights,
+  evaluateSlaBudget,
 };
