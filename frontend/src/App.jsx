@@ -300,7 +300,6 @@ export default function App() {
   const [timeout, setTimeoutVal] = useState(10000);
   const [activeSubTab, setActiveSubTab] = useState("headers");
 
-  // Load test state
   const [concurrency, setConcurrency] = useState(5);
   const [totalRequests, setTotalRequests] = useState(20);
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
@@ -308,28 +307,23 @@ export default function App() {
   const [response, setResponse] = useState(null);
   const [singleResponseTab, setSingleResponseTab] = useState("body");
 
-  // WebSocket state
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef(null);
 
-  // History state
   const [testRuns, setTestRuns] = useState([]);
   const [selectedRunDetail, setSelectedRunDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Compare state
   const [compareRunA, setCompareRunA] = useState("");
   const [compareRunB, setCompareRunB] = useState("");
   const [compareResult, setCompareResult] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
 
-  // Scaling state
   const [scalingLevels, setScalingLevels] = useState("1, 5, 10, 25");
   const [scalingReqs, setScalingReqs] = useState(20);
   const [scalingResult, setScalingResult] = useState(null);
   const [scalingLoading, setScalingLoading] = useState(false);
 
-  // Workflow state
   const [workflowSteps, setWorkflowSteps] = useState(
     JSON.stringify(
       [
@@ -358,7 +352,6 @@ export default function App() {
   const [workflowResult, setWorkflowResult] = useState(null);
   const [workflowLoading, setWorkflowLoading] = useState(false);
 
-  // WebSocket Connection with automatic reconnection
   useEffect(() => {
     let reconnectTimeout = null;
 
@@ -376,8 +369,8 @@ export default function App() {
           if (data.type === "progress") {
             setProgress({ completed: data.completed, total: data.total });
           }
-        } catch {
-          // ignore invalid json
+        } catch (err) {
+          void err;
         }
       };
 
@@ -695,7 +688,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Header */}
       <header className="app-header">
         <div className="brand">
           <div className="brand-icon">⚡</div>
@@ -713,7 +705,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Mode Navigation Tabs */}
       <nav className="nav-tabs">
         {[
           { id: "single", label: "Single Request", icon: "🎯" },
@@ -739,7 +730,6 @@ export default function App() {
         ))}
       </nav>
 
-      {/* Main Request Configuration Form (For Single, Load, Scaling) */}
       {(mode === "single" || mode === "load" || mode === "scaling") && (
         <section className="card">
           <div className="card-title">
@@ -807,7 +797,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Load Test Specific Controls */}
           {mode === "load" && (
             <div className="options-row">
               <div className="option-group">
@@ -850,7 +839,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Scaling Test Specific Controls */}
           {mode === "scaling" && (
             <div className="options-row">
               <div className="option-group">
@@ -889,7 +877,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Payload and Headers Sub-tabs */}
           <div>
             <div className="sub-tabs">
               <button
@@ -954,7 +941,6 @@ export default function App() {
         </section>
       )}
 
-      {/* Live Progress Bar for Load Testing */}
       {loading && mode === "load" && (
         <div className="progress-container">
           <div className="progress-header">
@@ -982,7 +968,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Single Request Result View */}
       {mode === "single" && response && (
         <section className="card">
           <div className="card-title">
@@ -1049,7 +1034,6 @@ export default function App() {
         </section>
       )}
 
-      {/* Load Test Result Dashboard */}
       {mode === "load" && response && response.metrics && (
         <section className="card">
           <div className="card-title">
@@ -1070,7 +1054,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Metric Cards Grid */}
           <div className="metrics-grid">
             <MetricCard label="Total Requests" value={response.metrics.totalRequests} />
             <MetricCard
@@ -1092,10 +1075,8 @@ export default function App() {
             <MetricCard label="Duration" value={response.totalDurationMs} unit="ms" />
           </div>
 
-          {/* Apdex Score Card */}
           {response.apdex && <ApdexCard apdex={response.apdex} />}
 
-          {/* Rule-based Insights */}
           {response.insights && response.insights.length > 0 && (
             <div>
               <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
@@ -1105,7 +1086,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Charts */}
           {response.results && response.results.length > 0 && (
             <>
               <LatencyChart results={response.results} />
@@ -1115,7 +1095,6 @@ export default function App() {
         </section>
       )}
 
-      {/* Scaling Test Result View */}
       {mode === "scaling" && scalingResult && (
         <section className="card">
           <div className="card-title">
@@ -1133,7 +1112,6 @@ export default function App() {
             <>
               <ScalingChart runs={scalingResult.runs} />
 
-              {/* Concurrency Scaling Insights */}
               {scalingResult.insights && scalingResult.insights.length > 0 && (
                 <div>
                   <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
@@ -1185,7 +1163,6 @@ export default function App() {
         </section>
       )}
 
-      {/* Multi-step Workflow View */}
       {mode === "workflow" && (
         <section className="card">
           <div className="card-title">
@@ -1313,7 +1290,6 @@ export default function App() {
         </section>
       )}
 
-      {/* Compare Runs View */}
       {mode === "compare" && (
         <section className="card">
           <div className="card-title">
@@ -1412,7 +1388,6 @@ export default function App() {
         </section>
       )}
 
-      {/* History & Logs View */}
       {mode === "history" && (
         <section className="card">
           <div className="card-title">
@@ -1496,7 +1471,6 @@ export default function App() {
         </section>
       )}
 
-      {/* Run Detail Drilldown Modal */}
       {selectedRunDetail && (
         <div className="modal-overlay" onClick={() => setSelectedRunDetail(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -1541,7 +1515,6 @@ export default function App() {
               />
             </div>
 
-            {/* Apdex Score Card */}
             {selectedRunDetail.apdex && <ApdexCard apdex={selectedRunDetail.apdex} />}
 
             {selectedRunDetail.insights && (

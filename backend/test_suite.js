@@ -34,7 +34,6 @@ test('1. ConcurrencyLimiter: limits concurrent active tasks and handles synchron
   assert.strictEqual(maxActive, 2);
   assert.strictEqual(active, 0);
 
-  // Verify limiter handles sync exception without deadlocking
   try {
     await limiter.run(() => {
       throw new Error('Sync error inside task');
@@ -75,15 +74,14 @@ test('2. calculateMetrics: calculates statistics, percentiles, throughput and ha
 
 test('3. calculateApdex: evaluates user satisfaction score, counts, and ratings', () => {
   const results = [
-    { durationMs: 100, success: true }, // satisfied (<=250)
-    { durationMs: 200, success: true }, // satisfied
-    { durationMs: 500, success: true }, // tolerating (250 < t <= 1000)
-    { durationMs: 1200, success: true }, // frustrated (> 1000)
-    { durationMs: 50, success: false }, // frustrated (failed)
+    { durationMs: 100, success: true },
+    { durationMs: 200, success: true },
+    { durationMs: 500, success: true },
+    { durationMs: 1200, success: true },
+    { durationMs: 50, success: false },
   ];
 
   const apdex = calculateApdex(results, 250);
-  // score = (2 + 1/2) / 5 = 2.5 / 5 = 0.50
   assert.strictEqual(apdex.score, 0.5);
   assert.strictEqual(apdex.rating, 'Poor');
   assert.strictEqual(apdex.satisfied, 2);
@@ -109,7 +107,6 @@ test('4. diagnoseErrorPatterns: categorizes 429 rate limit, 502/504 gateway, 500
 });
 
 test('5. analyzeLatencyDistribution: detects serverless cold starts and latency jitter', () => {
-  // Cold start pattern: first 2 requests slow, remaining 18 fast
   const coldStartResults = [
     { durationMs: 950, success: true },
     { durationMs: 850, success: true },
@@ -135,7 +132,6 @@ test('6. generateInsights: comprehensive rule evaluation & baseline comparisons'
   assert.ok(insights.some((i) => i.level === 'error' && i.category === 'low_availability'));
   assert.ok(insights.some((i) => i.level === 'warning' && i.category === 'tail_latency_gap'));
 
-  // Baseline comparison
   const baselineMetrics = { p95: 500 };
   const regressionInsights = generateInsights({ ...badMetrics, p95: 1000 }, baselineMetrics);
   assert.ok(regressionInsights.some((i) => i.category === 'regression'));
@@ -145,9 +141,9 @@ test('7. generateScalingInsights: finds sweet spot, flags saturation & collapses
   const scalingRuns = [
     { concurrency: 1, throughput_rps: 50, success_rate: 100, p95: 20 },
     { concurrency: 5, throughput_rps: 180, success_rate: 100, p95: 25 },
-    { concurrency: 10, throughput_rps: 200, success_rate: 100, p95: 50 }, // Sweet spot
-    { concurrency: 25, throughput_rps: 198, success_rate: 98, p95: 140 }, // Saturation
-    { concurrency: 50, throughput_rps: 40, success_rate: 80, p95: 900 }, // Collapse
+    { concurrency: 10, throughput_rps: 200, success_rate: 100, p95: 50 },
+    { concurrency: 25, throughput_rps: 198, success_rate: 98, p95: 140 },
+    { concurrency: 50, throughput_rps: 40, success_rate: 80, p95: 900 },
   ];
 
   const scalingInsights = generateScalingInsights(scalingRuns);
@@ -177,7 +173,6 @@ test('8. workflow: variable extraction, interpolation, and multi-step execution'
   assert.strictEqual(getByPath(bodyData, 'users.0.profile.email'), 'test@example.com');
   assert.strictEqual(getByPath(bodyData, 'headers.authorization'), 'Bearer abc');
 
-  // Test runWorkflow with mockable public test endpoint
   const wfResult = await runWorkflow([
     {
       name: 'Step 1: Get Post',
@@ -241,12 +236,10 @@ test('9. saveTestRun & compareRuns: SQLite transaction and metric diff engine', 
   });
   assert.ok(runIdB > 0);
 
-  // Read back and compare
   const comp = compareRuns(runIdA, runIdB);
   assert.strictEqual(comp.comparison.p95.verdict, 'improved');
   assert.strictEqual(comp.comparison.throughput_rps.verdict, 'improved');
 
-  // Verify deletion cleanup
   const delStmt = db.prepare('DELETE FROM requests WHERE test_run_id = ?');
   const delRunStmt = db.prepare('DELETE FROM test_runs WHERE id = ?');
   delStmt.run(runIdA);

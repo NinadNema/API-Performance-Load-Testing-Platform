@@ -1,9 +1,3 @@
-/**
- * Advanced Performance & Statistical Insights Engine
- * Calculates Apdex scores, diagnoses error root causes, detects cold starts/jitter,
- * and analyzes concurrency scaling bottlenecks with optimal sweet-spot detection.
- */
-
 function calculateApdex(results, targetLatencyMs = 250) {
   if (!Array.isArray(results) || results.length === 0) {
     return { score: 1.0, rating: 'Excellent', satisfied: 0, tolerating: 0, frustrated: 0, targetLatencyMs };
@@ -56,7 +50,7 @@ function diagnoseErrorPatterns(results) {
   const networkErrors = {};
   let totalErrors = 0;
 
-  results.forEach((r, idx) => {
+  results.forEach((r) => {
     if (!r.success) {
       totalErrors++;
       if (r.status) {
@@ -70,7 +64,6 @@ function diagnoseErrorPatterns(results) {
 
   if (totalErrors === 0) return insights;
 
-  // 1. Rate Limiting Check (HTTP 429)
   if (statusCounts[429]) {
     insights.push({
       level: 'error',
@@ -79,7 +72,6 @@ function diagnoseErrorPatterns(results) {
     });
   }
 
-  // 2. Gateway / Upstream Overload Check (HTTP 502, 503, 504)
   const gatewayErrors = (statusCounts[502] || 0) + (statusCounts[503] || 0) + (statusCounts[504] || 0);
   if (gatewayErrors > 0) {
     insights.push({
@@ -89,7 +81,6 @@ function diagnoseErrorPatterns(results) {
     });
   }
 
-  // 3. Application Crash / Server Exceptions (HTTP 500)
   if (statusCounts[500]) {
     insights.push({
       level: 'error',
@@ -98,7 +89,6 @@ function diagnoseErrorPatterns(results) {
     });
   }
 
-  // 4. Authentication / Authorization Failures (HTTP 401, 403)
   const authErrors = (statusCounts[401] || 0) + (statusCounts[403] || 0);
   if (authErrors > 0) {
     insights.push({
@@ -108,7 +98,6 @@ function diagnoseErrorPatterns(results) {
     });
   }
 
-  // 5. Network Timeouts and Connection Resets
   const networkErrorCount = Object.values(networkErrors).reduce((a, b) => a + b, 0);
   if (networkErrorCount > 0) {
     insights.push({
@@ -118,7 +107,6 @@ function diagnoseErrorPatterns(results) {
     });
   }
 
-  // 6. Outage / Sudden Collapse Check vs Intermittent Drops
   if (totalErrors >= 5 && results.length >= 20) {
     const firstHalfErrors = results.slice(0, Math.floor(results.length / 2)).filter((r) => !r.success).length;
     const secondHalfErrors = results.slice(Math.floor(results.length / 2)).filter((r) => !r.success).length;
@@ -141,7 +129,6 @@ function analyzeLatencyDistribution(results, metrics) {
 
   const durations = results.map((r) => (typeof r.durationMs === 'number' ? r.durationMs : 0));
 
-  // 1. Cold Start Detection (First 10% vs Remaining 90%)
   const sampleSize = Math.max(2, Math.floor(results.length * 0.1));
   const warmup = durations.slice(0, sampleSize);
   const steady = durations.slice(sampleSize);
@@ -157,7 +144,6 @@ function analyzeLatencyDistribution(results, metrics) {
     });
   }
 
-  // 2. Standard Deviation & Coefficient of Variation (Jitter Analysis)
   const mean = metrics.avgMs || steadyAvg || 1;
   const variance = durations.reduce((sum, d) => sum + Math.pow(d - mean, 2), 0) / durations.length;
   const stdDev = Math.sqrt(variance);
@@ -171,7 +157,6 @@ function analyzeLatencyDistribution(results, metrics) {
     });
   }
 
-  // 3. Bimodal / Multimodal Distribution Check (Cache Hit vs Cache Miss)
   const p50 = metrics.p50 || 0;
   const p95 = metrics.p95 || 0;
   const p99 = metrics.p99 || 0;
@@ -198,7 +183,6 @@ function generateInsights(metrics, baselineMetrics = null, results = null, optio
   const errorCount = metrics.errorCount ?? 0;
   const totalRequests = metrics.totalRequests ?? 0;
 
-  // 1. Basic SLAs & Thresholds
   if (p95 > 1000) {
     insights.push({
       level: 'warning',
@@ -223,7 +207,6 @@ function generateInsights(metrics, baselineMetrics = null, results = null, optio
     });
   }
 
-  // 2. Apdex Score Evaluation
   if (Array.isArray(results) && results.length > 0) {
     const targetLatency = options.targetLatencyMs || (p50 > 0 ? Math.max(100, Math.round(p50 * 1.5)) : 250);
     const apdex = calculateApdex(results, targetLatency);
@@ -248,16 +231,13 @@ function generateInsights(metrics, baselineMetrics = null, results = null, optio
       });
     }
 
-    // 3. Error Classification Diagnostics
     const errorInsights = diagnoseErrorPatterns(results);
     insights.push(...errorInsights);
 
-    // 4. Latency Distribution, Cold Starts & Jitter
     const latencyInsights = analyzeLatencyDistribution(results, metrics);
     insights.push(...latencyInsights);
   }
 
-  // 5. Baseline Comparison
   if (baselineMetrics && baselineMetrics.p95 > 0) {
     const baseP95 = baselineMetrics.p95;
     const p95Change = ((p95 - baseP95) / baseP95) * 100;
@@ -276,12 +256,10 @@ function generateInsights(metrics, baselineMetrics = null, results = null, optio
     }
   }
 
-  // Default clean state
   if (insights.length === 0) {
     insights.push({ level: 'success', message: 'All requests passed SLA thresholds cleanly with no performance anomalies detected.' });
   }
 
-  // Order insights by severity: error -> warning -> info -> success
   const severityOrder = { error: 0, warning: 1, info: 2, success: 3 };
   insights.sort((a, b) => (severityOrder[a.level] ?? 99) - (severityOrder[b.level] ?? 99));
 
@@ -302,7 +280,6 @@ function generateScalingInsights(runs) {
     const currThroughput = curr.throughput_rps ?? curr.metrics?.throughputRps ?? 0;
     const currSuccessRate = curr.success_rate ?? curr.metrics?.successRate ?? 100;
 
-    // Find Optimal Sweet Spot (highest throughput with >= 98% success)
     if (currSuccessRate >= 98 && currThroughput > maxThroughput) {
       maxThroughput = currThroughput;
       optimalRun = curr;
@@ -319,7 +296,6 @@ function generateScalingInsights(runs) {
         ? ((currThroughput - prevThroughput) / prevThroughput) * 100
         : 0;
 
-      // 1. Throughput Collapse Check
       if (throughputChange < -20) {
         insights.push({
           level: 'error',
@@ -328,7 +304,6 @@ function generateScalingInsights(runs) {
         });
       }
 
-      // 2. Success Rate Drop
       if (currSuccessRate < prevSuccessRate && (prevSuccessRate - currSuccessRate) >= 2) {
         insights.push({
           level: 'error',
@@ -337,7 +312,6 @@ function generateScalingInsights(runs) {
         });
       }
 
-      // 3. Tail Latency Surge
       if (prevP95 > 0 && currP95 > prevP95 * 2) {
         insights.push({
           level: 'warning',
@@ -346,7 +320,6 @@ function generateScalingInsights(runs) {
         });
       }
 
-      // 4. Concurrency Saturation (Little's Law: Latency rises while throughput stays flat)
       if (Math.abs(throughputChange) < 5 && currP95 > prevP95 * 1.5 && !saturationDetected) {
         saturationDetected = true;
         insights.push({
@@ -358,7 +331,6 @@ function generateScalingInsights(runs) {
     }
   }
 
-  // 5. Optimal Concurrency Sweet Spot Highlight
   if (optimalRun && maxThroughput > 0) {
     insights.push({
       level: 'success',
@@ -367,7 +339,6 @@ function generateScalingInsights(runs) {
     });
   }
 
-  // 6. Overall Scaling Efficiency Score
   const first = runs[0];
   const last = runs[runs.length - 1];
   const firstThroughput = first.throughput_rps ?? first.metrics?.throughputRps ?? 0;

@@ -86,7 +86,6 @@ code, pre {
   font-family: var(--font-mono);
 }
 
-/* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

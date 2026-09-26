@@ -5,6 +5,6 @@ const fakeResults = Array.from({ length: 20 }, (_, i) => ({
   success: true,
 }));
 
-const fakeTotalDurationMs = 1000; // pretend the whole test took 1 second
+const fakeTotalDurationMs = 1000;
 
 console.log(calculateMetrics(fakeResults, fakeTotalDurationMs));

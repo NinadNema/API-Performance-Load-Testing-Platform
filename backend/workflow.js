@@ -3,7 +3,6 @@ const axios = require('axios');
 function getByPath(obj, path) {
   if (!obj || !path) return undefined;
   
-  // Normalize array syntax like body[0].id or [0] to dot syntax
   const normalizedPath = String(path)
     .replace(/\[(\w+)\]/g, '.$1')
     .replace(/^\./, '');
@@ -18,7 +17,6 @@ function getByPath(obj, path) {
       if (key in current) {
         current = current[key];
       } else {
-        // Case-insensitive fallback (especially useful for headers)
         const lowerKey = key.toLowerCase();
         const foundKey = Object.keys(current).find((k) => k.toLowerCase() === lowerKey);
         if (foundKey) {
@@ -36,12 +34,10 @@ function getByPath(obj, path) {
 
 function substituteInValue(val, context) {
   if (typeof val === 'string') {
-    // If the entire string is just '{{varName}}', retain the exact type (e.g., number, boolean, object)
     const fullMatch = val.match(/^\{\{(\w+)\}\}$/);
     if (fullMatch && fullMatch[1] in context) {
       return context[fullMatch[1]];
     }
-    // Otherwise, perform string interpolation
     return val.replace(/\{\{(\w+)\}\}/g, (_, key) => {
       const v = context[key];
       if (v === undefined || v === null) return '';

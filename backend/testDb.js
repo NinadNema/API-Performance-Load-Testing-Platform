@@ -25,7 +25,6 @@ const id = saveTestRun({
 
 console.log('Saved test run with ID:', id);
 
-// Read it back to prove it actually persisted
 const savedRun = db.prepare('SELECT * FROM test_runs WHERE id = ?').get(id);
 const savedRequests = db.prepare('SELECT * FROM requests WHERE test_run_id = ?').all(id);
 

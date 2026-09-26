@@ -171,6 +171,7 @@ app.get('/api/test-runs/:id', (req, res) => {
     if (!run) {
       return res.status(404).json({ success: false, error: 'Test run not found' });
     }
+    const requests = db.prepare('SELECT * FROM requests WHERE test_run_id = ?').all(req.params.id);
     const mappedRequests = requests.map((r) => ({
       requestIndex: r.request_index,
       durationMs: r.duration_ms,
