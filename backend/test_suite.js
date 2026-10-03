@@ -320,3 +320,207 @@ test('12. workerLoadRunner: executes load tests using multi-threaded worker pool
   assert.strictEqual(results[0].success, true);
 });
 
+test('13. auth: registration, validation, password hashing, and login token generation', async () => {
+  const { registerUser, loginUser } = require('./auth');
+  const uniqueSuffix = Date.now();
+  const username = `tester_${uniqueSuffix}`;
+  const email = `tester_${uniqueSuffix}@example.com`;
+  const password = 'SecretPassword123!';
+
+  // 1. Register new user
+  const regResult = await registerUser({
+    username,
+    email,
+    password,
+    fullName: 'Load Test Engineer',
+  });
+
+  assert.ok(regResult.token, 'Token should be returned');
+  assert.strictEqual(regResult.user.username, username);
+  assert.strictEqual(regResult.user.email, email);
+  assert.strictEqual(regResult.user.fullName, 'Load Test Engineer');
+  assert.strictEqual(regResult.user.password_hash, undefined, 'password_hash should not be exposed');
+
+  // 2. Prevent duplicate email registration
+  await assert.rejects(
+    async () => {
+      await registerUser({
+        username: `diff_${uniqueSuffix}`,
+        email,
+        password: 'anotherpassword',
+      });
+    },
+    /already exists/
+  );
+
+  // 3. Prevent duplicate username registration
+  await assert.rejects(
+    async () => {
+      await registerUser({
+        username,
+        email: `diff_${uniqueSuffix}@example.com`,
+        password: 'anotherpassword',
+      });
+    },
+    /already taken/
+  );
+
+  // 4. Successful login with username
+  const loginWithUsername = await loginUser({
+    identifier: username,
+    password,
+  });
+  assert.ok(loginWithUsername.token);
+  assert.strictEqual(loginWithUsername.user.id, regResult.user.id);
+
+  // 5. Successful login with email
+  const loginWithEmail = await loginUser({
+    identifier: email,
+    password,
+  });
+  assert.ok(loginWithEmail.token);
+  assert.strictEqual(loginWithEmail.user.id, regResult.user.id);
+
+  // 6. Rejected login with wrong password
+  await assert.rejects(
+    async () => {
+      await loginUser({
+        identifier: email,
+        password: 'WrongPassword!',
+      });
+    },
+    /Invalid username\/email or password/
+  );
+});
+
+test('14. auth: profile and password updates with verification', async () => {
+  const { registerUser, updateUserProfile, loginUser } = require('./auth');
+  const uniqueSuffix = Date.now() + 10;
+  const username = `prof_${uniqueSuffix}`;
+  const email = `prof_${uniqueSuffix}@example.com`;
+
+  const regResult = await registerUser({
+    username,
+    email,
+    password: 'OriginalPassword123',
+    fullName: 'Initial Name',
+  });
+
+  // Update profile full name
+  const updated = await updateUserProfile(regResult.user.id, {
+    fullName: 'Updated Name Pro',
+  });
+  assert.strictEqual(updated.fullName, 'Updated Name Pro');
+
+  // Update password
+  await updateUserProfile(regResult.user.id, {
+    currentPassword: 'OriginalPassword123',
+    newPassword: 'BrandNewPassword456',
+  });
+
+  // Verify new password works for login
+  const relogin = await loginUser({
+    identifier: username,
+    password: 'BrandNewPassword456',
+  });
+  assert.strictEqual(relogin.user.fullName, 'Updated Name Pro');
+});
+
+test('15. user-associated test runs: links run to user_id in database', () => {
+  const runId = saveTestRun({
+    userId: 999,
+    url: 'https://jsonplaceholder.typicode.com/posts/1',
+    method: 'GET',
+    concurrency: 2,
+    totalRequests: 2,
+    totalDurationMs: 100,
+    metrics: { avgMs: 50, successRate: 100, throughputRps: 20 },
+    results: [
+      { requestIndex: 1, durationMs: 50, status: 200, success: true },
+      { requestIndex: 2, durationMs: 50, status: 200, success: true },
+    ],
+  });
+
+  const row = db.prepare('SELECT * FROM test_runs WHERE id = ?').get(runId);
+  assert.strictEqual(row.user_id, 999);
+  assert.strictEqual(row.url, 'https://jsonplaceholder.typicode.com/posts/1');
+});
+
+test('16. session run claiming: bulk save guest runs into user account', async () => {
+  const { registerUser } = require('./auth');
+  const uniqueSuffix = Date.now() + 50;
+  const regResult = await registerUser({
+    username: `saveuser_${uniqueSuffix}`,
+    email: `saveuser_${uniqueSuffix}@example.com`,
+    password: 'Password123!',
+    fullName: 'Session Saver',
+  });
+
+  const guestRuns = [
+    {
+      url: 'https://jsonplaceholder.typicode.com/posts/1',
+      method: 'GET',
+      concurrency: 5,
+      total_requests: 10,
+      total_duration_ms: 250,
+      avg_ms: 25,
+      min_ms: 10,
+      max_ms: 50,
+      p50: 20,
+      p95: 45,
+      p99: 49,
+      success_rate: 100,
+      throughput_rps: 40,
+      results: [{ requestIndex: 0, durationMs: 25, status: 200, success: true }],
+    },
+    {
+      url: 'https://jsonplaceholder.typicode.com/posts/2',
+      method: 'POST',
+      concurrency: 2,
+      total_requests: 4,
+      total_duration_ms: 120,
+      avg_ms: 30,
+      min_ms: 15,
+      max_ms: 60,
+      p50: 25,
+      p95: 55,
+      p99: 58,
+      success_rate: 100,
+      throughput_rps: 33,
+      results: [{ requestIndex: 0, durationMs: 30, status: 201, success: true }],
+    },
+  ];
+
+  const savedIds = [];
+  for (const r of guestRuns) {
+    const id = saveTestRun({
+      userId: regResult.user.id,
+      url: r.url,
+      method: r.method,
+      concurrency: r.concurrency,
+      totalRequests: r.total_requests,
+      totalDurationMs: r.total_duration_ms,
+      metrics: {
+        avgMs: r.avg_ms,
+        minMs: r.min_ms,
+        maxMs: r.max_ms,
+        p50: r.p50,
+        p95: r.p95,
+        p99: r.p99,
+        successRate: r.success_rate,
+        throughputRps: r.throughput_rps,
+      },
+      results: r.results,
+    });
+    savedIds.push(id);
+  }
+
+  assert.strictEqual(savedIds.length, 2);
+  const rows = db.prepare('SELECT * FROM test_runs WHERE user_id = ?').all(regResult.user.id);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].url, 'https://jsonplaceholder.typicode.com/posts/1');
+  assert.strictEqual(rows[1].url, 'https://jsonplaceholder.typicode.com/posts/2');
+});
+
+
+

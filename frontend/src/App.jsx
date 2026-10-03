@@ -13,6 +13,20 @@ import {
 import "./App.css";
 import { autoDetectAndParse } from "./utils/importers";
 import { generateExecutivePdfReport } from "./utils/generatePdfReport";
+import AuthModal from "./components/AuthModal";
+import UserMenu from "./components/UserMenu";
+import {
+  getStoredUser,
+  apiGetMe,
+  clearAuthStorage,
+  authFetch,
+  getGuestSessionRuns,
+  addGuestSessionRun,
+  removeGuestSessionRun,
+  clearGuestSessionRuns,
+  apiSaveSessionRun,
+  apiBulkSaveSessionRuns,
+} from "./utils/auth";
 
 function MetricCard({ label, value, highlight = false, unit = "", subtitle = "" }) {
   return (
@@ -353,6 +367,14 @@ const PRESETS = [
 ];
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(getStoredUser());
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState("login");
+  const [filterUserOnly, setFilterUserOnly] = useState(false);
+  const [guestRuns, setGuestRuns] = useState(getGuestSessionRuns());
+  const [pendingSaveRun, setPendingSaveRun] = useState(null);
+  const [saveNotification, setSaveNotification] = useState("");
+
   const [mode, setMode] = useState("load");
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/posts/1");
@@ -468,9 +490,27 @@ export default function App() {
     };
   }, []);
 
-  async function fetchTestRuns() {
+  useEffect(() => {
+    apiGetMe().then((user) => {
+      if (user) {
+        setCurrentUser(user);
+      } else {
+        setCurrentUser(null);
+      }
+    });
+  }, []);
+
+  async function fetchTestRuns(userOnly = filterUserOnly) {
+    if (!currentUser) {
+      setGuestRuns(getGuestSessionRuns());
+      return;
+    }
+
     try {
-      const res = await fetch("http://localhost:4000/api/test-runs");
+      const url = userOnly && currentUser?.id
+        ? "http://localhost:4000/api/test-runs?userOnly=true"
+        : "http://localhost:4000/api/test-runs";
+      const res = await authFetch(url);
       const data = await res.json();
       if (data.success) {
         setTestRuns(data.runs);
@@ -485,9 +525,44 @@ export default function App() {
   }
 
   async function fetchRunDetail(runId) {
+    const isSessionRun =
+      String(runId).startsWith("session-") ||
+      String(runId).startsWith("guest-") ||
+      String(runId).startsWith("scaling-");
+
+    if (isSessionRun) {
+      const localRun = guestRuns.find((r) => String(r.id) === String(runId));
+      if (localRun) {
+        setSelectedRunDetail({
+          run: localRun,
+          metrics: localRun.metrics || {
+            totalRequests: localRun.total_requests,
+            avgMs: localRun.avg_ms,
+            minMs: localRun.min_ms,
+            maxMs: localRun.max_ms,
+            p50: localRun.p50,
+            p95: localRun.p95,
+            p99: localRun.p99,
+            successRate: localRun.success_rate,
+            throughputRps: localRun.throughput_rps,
+          },
+          requests: (localRun.results || []).map((r) => ({
+            requestIndex: r.requestIndex,
+            durationMs: r.durationMs,
+            status: r.status,
+            success: Boolean(r.success),
+          })),
+          apdex: localRun.apdex,
+          insights: localRun.insights,
+          slaVerdict: localRun.slaVerdict,
+        });
+        return;
+      }
+    }
+
     setDetailLoading(true);
     try {
-      const res = await fetch(`http://localhost:4000/api/test-runs/${runId}`);
+      const res = await authFetch(`http://localhost:4000/api/test-runs/${runId}`);
       const data = await res.json();
       if (data.success) {
         setSelectedRunDetail(data);
@@ -501,8 +576,22 @@ export default function App() {
 
   async function handleDeleteRun(e, runId) {
     e.stopPropagation();
+    const isSessionRun =
+      String(runId).startsWith("session-") ||
+      String(runId).startsWith("guest-") ||
+      String(runId).startsWith("scaling-");
+
+    if (isSessionRun) {
+      const updated = removeGuestSessionRun(runId);
+      setGuestRuns(updated);
+      if (selectedRunDetail?.run?.id === runId) {
+        setSelectedRunDetail(null);
+      }
+      return;
+    }
+
     try {
-      const res = await fetch(`http://localhost:4000/api/test-runs/${runId}`, {
+      const res = await authFetch(`http://localhost:4000/api/test-runs/${runId}`, {
         method: "DELETE",
       });
       const data = await res.json();
@@ -518,9 +607,17 @@ export default function App() {
   }
 
   async function handleClearAllRuns() {
-    if (!window.confirm("Are you sure you want to clear all test run history?")) return;
+    if (!currentUser) {
+      if (!window.confirm("Clear all temporary test runs from this guest session?")) return;
+      clearGuestSessionRuns();
+      setGuestRuns([]);
+      setSelectedRunDetail(null);
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to clear your saved test run history?")) return;
     try {
-      const res = await fetch("http://localhost:4000/api/test-runs", {
+      const res = await authFetch("http://localhost:4000/api/test-runs", {
         method: "DELETE",
       });
       const data = await res.json();
@@ -530,6 +627,138 @@ export default function App() {
       }
     } catch {
       void 0;
+    }
+  }
+
+  function handleLogout() {
+    clearAuthStorage();
+    setCurrentUser(null);
+    setFilterUserOnly(false);
+    setGuestRuns(getGuestSessionRuns());
+    setTestRuns([]);
+  }
+
+  function handleViewMyRuns() {
+    setMode("history");
+    setFilterUserOnly(true);
+    fetchTestRuns(true);
+  }
+
+  async function handleSaveRunToAccount(runData) {
+    if (!runData) return;
+
+    if (!currentUser) {
+      setPendingSaveRun(runData);
+      setAuthModalTab("login");
+      setAuthModalOpen(true);
+      return;
+    }
+
+    try {
+      const payload = {
+        url: runData.url,
+        method: runData.method || "GET",
+        concurrency: Number(runData.concurrency) || 1,
+        totalRequests: Number(runData.total_requests || runData.totalRequests) || 1,
+        totalDurationMs: Number(runData.total_duration_ms || runData.totalDurationMs) || 0,
+        metrics: runData.metrics || {
+          avgMs: runData.avg_ms,
+          minMs: runData.min_ms,
+          maxMs: runData.max_ms,
+          p50: runData.p50,
+          p95: runData.p95,
+          p99: runData.p99,
+          successRate: runData.success_rate,
+          throughputRps: runData.throughput_rps,
+        },
+        results: runData.results || [],
+      };
+
+      const res = await apiSaveSessionRun(payload);
+      if (res.success) {
+        if (runData.id) {
+          const updated = removeGuestSessionRun(runData.id);
+          setGuestRuns(updated);
+        }
+        fetchTestRuns();
+        setSaveNotification("✅ Benchmark run successfully saved to your account!");
+        setTimeout(() => setSaveNotification(""), 4000);
+        if (selectedRunDetail?.run?.id === runData.id) {
+          setSelectedRunDetail((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  run: {
+                    ...prev.run,
+                    id: res.testRunId,
+                    isGuest: false,
+                    owner_username: currentUser.username,
+                  },
+                }
+              : null
+          );
+        }
+      }
+    } catch (err) {
+      alert(err.message || "Failed to save run");
+    }
+  }
+
+  async function handleBulkSaveGuestRuns() {
+    if (!currentUser || guestRuns.length === 0) return;
+    try {
+      const res = await apiBulkSaveSessionRuns(guestRuns);
+      if (res.success) {
+        clearGuestSessionRuns();
+        setGuestRuns([]);
+        fetchTestRuns();
+        setSaveNotification(`✅ Successfully saved ${res.count} session runs to your account!`);
+        setTimeout(() => setSaveNotification(""), 4000);
+      }
+    } catch (err) {
+      alert(err.message || "Failed to save session runs");
+    }
+  }
+
+  async function handleAuthSuccess(user) {
+    setCurrentUser(user);
+    fetchTestRuns();
+
+    if (pendingSaveRun) {
+      try {
+        const payload = {
+          url: pendingSaveRun.url,
+          method: pendingSaveRun.method || "GET",
+          concurrency: Number(pendingSaveRun.concurrency) || 1,
+          totalRequests: Number(pendingSaveRun.total_requests || pendingSaveRun.totalRequests) || 1,
+          totalDurationMs: Number(pendingSaveRun.total_duration_ms || pendingSaveRun.totalDurationMs) || 0,
+          metrics: pendingSaveRun.metrics || {
+            avgMs: pendingSaveRun.avg_ms,
+            minMs: pendingSaveRun.min_ms,
+            maxMs: pendingSaveRun.max_ms,
+            p50: pendingSaveRun.p50,
+            p95: pendingSaveRun.p95,
+            p99: pendingSaveRun.p99,
+            successRate: pendingSaveRun.success_rate,
+            throughputRps: pendingSaveRun.throughput_rps,
+          },
+          results: pendingSaveRun.results || [],
+        };
+        const res = await apiSaveSessionRun(payload);
+        if (res.success) {
+          if (pendingSaveRun.id) {
+            const updated = removeGuestSessionRun(pendingSaveRun.id);
+            setGuestRuns(updated);
+          }
+          fetchTestRuns();
+          setSaveNotification("✅ Benchmark run saved to your account!");
+          setTimeout(() => setSaveNotification(""), 4000);
+        }
+      } catch {
+        void 0;
+      } finally {
+        setPendingSaveRun(null);
+      }
     }
   }
 
@@ -634,7 +863,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch("http://localhost:4000/api/request", {
+      const res = await authFetch("http://localhost:4000/api/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -678,7 +907,7 @@ export default function App() {
       : null;
 
     try {
-      const res = await fetch("http://localhost:4000/api/load-test", {
+      const res = await authFetch("http://localhost:4000/api/load-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -696,6 +925,15 @@ export default function App() {
       });
       const data = await res.json();
       setResponse(data);
+
+      if (data.success && data.sessionRun) {
+        if (!currentUser || data.isGuest) {
+          const updated = addGuestSessionRun(data.sessionRun);
+          setGuestRuns(updated);
+        } else {
+          fetchTestRuns();
+        }
+      }
     } catch (err) {
       setResponse({ success: false, error: err.message });
     } finally {
@@ -709,7 +947,7 @@ export default function App() {
     setCompareResult(null);
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `http://localhost:4000/api/compare?runA=${compareRunA}&runB=${compareRunB}`
       );
       const data = await res.json();
@@ -750,7 +988,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch("http://localhost:4000/api/scaling-test", {
+      const res = await authFetch("http://localhost:4000/api/scaling-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -790,7 +1028,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch("http://localhost:4000/api/workflow", {
+      const res = await authFetch("http://localhost:4000/api/workflow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ steps: parsedSteps }),
@@ -829,7 +1067,8 @@ export default function App() {
     URL.revokeObjectURL(href);
   }
 
-  const filteredRuns = testRuns.filter((r) => {
+  const effectiveRuns = currentUser ? testRuns : guestRuns;
+  const filteredRuns = effectiveRuns.filter((r) => {
     if (!historySearch.trim()) return true;
     const q = historySearch.toLowerCase();
     return (
@@ -870,6 +1109,16 @@ export default function App() {
             <div className={`status-dot ${wsConnected ? "connected" : ""}`} />
             <span>{wsConnected ? "Live Socket Active" : "Socket Reconnecting..."}</span>
           </div>
+
+          <UserMenu
+            currentUser={currentUser}
+            onOpenAuth={(tab) => {
+              setAuthModalTab(tab);
+              setAuthModalOpen(true);
+            }}
+            onLogout={handleLogout}
+            onViewMyRuns={handleViewMyRuns}
+          />
         </div>
       </header>
 
@@ -1294,9 +1543,37 @@ export default function App() {
           <div className="card-title">
             <span>Load Benchmark Analytics Dashboard</span>
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {!currentUser && (
+                <button
+                  className="btn-save-account"
+                  onClick={() =>
+                    handleSaveRunToAccount(
+                      response.sessionRun || {
+                        url,
+                        method,
+                        concurrency,
+                        total_requests: totalRequests,
+                        total_duration_ms: response.totalDurationMs,
+                        metrics: response.metrics,
+                        results: response.results,
+                        apdex: response.apdex,
+                        insights: response.insights,
+                        slaVerdict: response.slaVerdict,
+                      }
+                    )
+                  }
+                >
+                  <span>💾</span>
+                  <span>Save to Account</span>
+                </button>
+              )}
               <button
                 className="btn-primary"
-                style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+                style={{
+                  padding: "0.45rem 0.95rem",
+                  fontSize: "0.8rem",
+                  background: "linear-gradient(135deg, #0284c7, #2563eb)",
+                }}
                 onClick={() =>
                   generateExecutivePdfReport({
                     run: { url, method, concurrency, total_requests: totalRequests },
@@ -1627,24 +1904,101 @@ export default function App() {
 
       {mode === "history" && (
         <section className="card">
+          {/* Guest Notice or Claim Unsaved Runs Banner */}
+          {!currentUser && (
+            <div className="guest-session-notice">
+              <div className="guest-notice-icon">⏱️</div>
+              <div className="guest-notice-content">
+                <div className="guest-notice-title">Guest Session (Temporary History)</div>
+                <div className="guest-notice-desc">
+                  You are using PulseAPI without logging in. Benchmark history is saved in your browser's temporary session and <strong>will be completely cleared when you close the application</strong>. Sign in or create an account to save runs permanently.
+                </div>
+              </div>
+              <button
+                className="btn-primary"
+                style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
+                onClick={() => {
+                  setAuthModalTab("register");
+                  setAuthModalOpen(true);
+                }}
+              >
+                ✨ Sign Up to Save
+              </button>
+            </div>
+          )}
+
+          {currentUser && guestRuns.length > 0 && (
+            <div className="claim-session-notice">
+              <div className="claim-notice-info">
+                <span className="claim-icon">💡</span>
+                <span>
+                  Found <strong>{guestRuns.length}</strong> unsaved run(s) from your guest session. Save them to your account?
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  className="btn-primary"
+                  style={{ padding: "0.35rem 0.75rem", fontSize: "0.775rem" }}
+                  onClick={handleBulkSaveGuestRuns}
+                >
+                  💾 Save All to My Account
+                </button>
+                <button
+                  className="btn-secondary"
+                  style={{ padding: "0.35rem 0.75rem", fontSize: "0.775rem" }}
+                  onClick={() => {
+                    clearGuestSessionRuns();
+                    setGuestRuns([]);
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="card-title">
-            <span>Historical Test Run Records</span>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <span>
+              {currentUser ? "Historical Test Run Records" : "Guest Session Benchmark History"}
+            </span>
+            <div style={{ display: "flex", gap: "0.65rem", alignItems: "center", flexWrap: "wrap" }}>
+              {currentUser && (
+                <div className="history-user-toggle">
+                  <button
+                    className={`toggle-pill ${!filterUserOnly ? "active" : ""}`}
+                    onClick={() => {
+                      setFilterUserOnly(false);
+                      fetchTestRuns(false);
+                    }}
+                  >
+                    🌐 All Runs
+                  </button>
+                  <button
+                    className={`toggle-pill ${filterUserOnly ? "active" : ""}`}
+                    onClick={() => {
+                      setFilterUserOnly(true);
+                      fetchTestRuns(true);
+                    }}
+                  >
+                    👤 My Runs Only
+                  </button>
+                </div>
+              )}
               <input
                 type="text"
                 placeholder="Search history by URL or ID..."
                 className="option-input"
-                style={{ width: "220px" }}
+                style={{ width: "200px" }}
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
               />
-              {testRuns.length > 0 && (
+              {effectiveRuns.length > 0 && (
                 <button
                   className="btn-danger"
                   style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem" }}
                   onClick={handleClearAllRuns}
                 >
-                  Clear History
+                  {currentUser ? "Clear History" : "Clear Session"}
                 </button>
               )}
             </div>
@@ -1652,13 +2006,16 @@ export default function App() {
 
           {filteredRuns.length === 0 ? (
             <div style={{ color: "var(--text-dim)", textAlign: "center", padding: "2.5rem" }}>
-              No test runs recorded matching your search. Execute a Load Test to persist runs here.
+              {currentUser
+                ? "No test runs recorded matching your search. Execute a Load Test to persist runs here."
+                : "No runs recorded in your current guest session. Run a test to view session data here."}
             </div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
                   <th>ID</th>
+                  <th>Author</th>
                   <th>Method & Target URL</th>
                   <th>VUs</th>
                   <th>Total Reqs</th>
@@ -1677,7 +2034,16 @@ export default function App() {
                     className="clickable"
                     onClick={() => fetchRunDetail(r.id)}
                   >
-                    <td style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>#{r.id}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+                      {typeof r.id === "number" ? `#${r.id}` : `⚡ ${String(r.id).substring(0, 10)}`}
+                    </td>
+                    <td>
+                      {r.owner_username ? (
+                        <span className="owner-badge">👤 @{r.owner_username}</span>
+                      ) : (
+                        <span className="guest-badge">⏱️ Session (Guest)</span>
+                      )}
+                    </td>
                     <td style={{ fontFamily: "var(--font-mono)" }}>
                       <span className={`method-${r.method}`} style={{ fontWeight: 800, marginRight: "0.5rem" }}>
                         {r.method}
@@ -1698,13 +2064,27 @@ export default function App() {
                       {r.created_at}
                     </td>
                     <td>
-                      <button
-                        className="btn-danger"
-                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
-                        onClick={(e) => handleDeleteRun(e, r.id)}
-                      >
-                        Delete
-                      </button>
+                      <div style={{ display: "flex", gap: "0.35rem" }}>
+                        {!currentUser && (
+                          <button
+                            className="btn-save-row"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSaveRunToAccount(r);
+                            }}
+                            title="Save run to account"
+                          >
+                            💾 Save
+                          </button>
+                        )}
+                        <button
+                          className="btn-danger"
+                          style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
+                          onClick={(e) => handleDeleteRun(e, r.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1723,9 +2103,22 @@ export default function App() {
                 {selectedRunDetail.run.url}
               </span>
               <div style={{ display: "flex", gap: "0.5rem" }}>
+                {(!selectedRunDetail.run.user_id || selectedRunDetail.run.isGuest) && (
+                  <button
+                    className="btn-save-account"
+                    onClick={() => handleSaveRunToAccount(selectedRunDetail.run)}
+                  >
+                    <span>💾</span>
+                    <span>Save to Account</span>
+                  </button>
+                )}
                 <button
                   className="btn-primary"
-                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+                  style={{
+                    padding: "0.4rem 0.85rem",
+                    fontSize: "0.8rem",
+                    background: "linear-gradient(135deg, #0284c7, #2563eb)",
+                  }}
                   onClick={() =>
                     generateExecutivePdfReport({
                       run: selectedRunDetail.run,
@@ -1914,6 +2307,24 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {saveNotification && (
+        <div className="save-toast-banner">
+          <span>{saveNotification}</span>
+          <button className="toast-close-btn" onClick={() => setSaveNotification("")}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        initialTab={authModalTab}
+        currentUser={currentUser}
+        onAuthSuccess={handleAuthSuccess}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }

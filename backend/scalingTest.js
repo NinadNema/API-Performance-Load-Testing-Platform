@@ -3,7 +3,7 @@ const calculateMetrics = require('./metrics');
 const saveTestRun = require('./saveTestRun');
 const { generateScalingInsights } = require('./insights');
 
-async function runScalingTest({ url, method = 'GET', totalRequestsPerLevel, concurrencyLevels, headers = {}, body = null, timeout = 10000 }) {
+async function runScalingTest({ userId = null, url, method = 'GET', totalRequestsPerLevel, concurrencyLevels, headers = {}, body = null, timeout = 10000 }) {
   const scalingGroupId = `scale-${Date.now()}`; 
   const runs = [];
 
@@ -21,18 +21,22 @@ async function runScalingTest({ url, method = 'GET', totalRequestsPerLevel, conc
     const totalDurationMs = performance.now() - start;
     const metrics = calculateMetrics(results, totalDurationMs);
 
-    const testRunId = saveTestRun({
-      url,
-      method,
-      concurrency,
-      totalRequests: totalRequestsPerLevel,
-      totalDurationMs: Math.round(totalDurationMs),
-      metrics,
-      results,
-      scalingGroupId,
-    });
+    let testRunId = null;
+    if (userId) {
+      testRunId = saveTestRun({
+        userId,
+        url,
+        method,
+        concurrency,
+        totalRequests: totalRequestsPerLevel,
+        totalDurationMs: Math.round(totalDurationMs),
+        metrics,
+        results,
+        scalingGroupId,
+      });
+    }
 
-    runs.push({ testRunId, concurrency, metrics });
+    runs.push({ testRunId, concurrency, metrics, results, totalDurationMs: Math.round(totalDurationMs) });
   }
 
   const insights = generateScalingInsights(runs);

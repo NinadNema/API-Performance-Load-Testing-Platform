@@ -2,9 +2,9 @@ const db = require('./db');
 
 const insertRunStmt = db.prepare(`
   INSERT INTO test_runs (
-    url, method, concurrency, total_requests, total_duration_ms,
+    user_id, url, method, concurrency, total_requests, total_duration_ms,
     avg_ms, min_ms, max_ms, p50, p95, p99, success_rate, throughput_rps, scaling_group_id
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertRequestStmt = db.prepare(`
@@ -13,9 +13,20 @@ const insertRequestStmt = db.prepare(`
 `);
 
 const saveTransaction = db.transaction((data) => {
-  const { url, method, concurrency, totalRequests, totalDurationMs, metrics, results, scalingGroupId = null } = data;
+  const {
+    userId = null,
+    url,
+    method,
+    concurrency,
+    totalRequests,
+    totalDurationMs,
+    metrics,
+    results,
+    scalingGroupId = null,
+  } = data;
 
   const info = insertRunStmt.run(
+    userId,
     url,
     method,
     concurrency,

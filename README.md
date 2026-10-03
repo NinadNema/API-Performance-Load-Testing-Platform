@@ -22,7 +22,10 @@ Most "full-stack project" tutorials are CRUD apps with a database and a form. Th
 - **Persistent history** — every test run and every individual request is saved to SQLite; browse past runs anytime
 - **Run comparison** — pick two saved runs and get a metric-by-metric diff with automatic improved/degraded/unchanged verdicts
 - **Concurrency scaling tests** — automatically run the same test at increasing concurrency levels (e.g. 1, 5, 10, 25) and chart how P95 latency and throughput change as load increases
-- **Rule-based insights** — automatic flags for high tail latency, elevated error rates, inconsistent performance (P50 vs P99 gap), and performance regressions or scaling collapses
+- **Guest Testing & Temporary Session Memory** — Use full load testing capabilities without signing in. Guest history is held in transient browser session memory and automatically wiped when closing the application.
+- **Save & Claim Session Runs to Account** — Save any test run or bulk-save an entire guest session directly to your permanent account when you log in or register.
+- **Authentication & User Management** — Register accounts, secure bcrypt password hashing, JWT session management, user profile settings, and 1-click instant demo mode
+- **User-associated Test Runs** — Automatically links benchmark runs to authenticated users with filterable "My Runs" vs "All Runs" views
 - **Multi-step workflows** — chain requests together, extracting values from one response (e.g. an auth token) and substituting them into a later request
 
 ## Tech stack
@@ -30,8 +33,9 @@ Most "full-stack project" tutorials are CRUD apps with a database and a form. Th
 | Layer | Choice | Why |
 |---|---|---|
 | Backend | Node.js + Express | Minimal framework — routing and middleware stay visible rather than hidden behind conventions |
+| Auth & Security | bcryptjs + jsonwebtoken | Secure salted password hashing and industry-standard JWT authentication tokens |
 | Concurrency | Custom `ConcurrencyLimiter` (hand-built) | Built from scratch to actually understand promise-based concurrency control, not just call a library |
-| Database | SQLite via `better-sqlite3` | Single-file, zero-setup, synchronous API — genuinely appropriate for a local tool, not a shortcut |
+| Database | SQLite via `better-sqlite3` | Single-file, zero-setup, synchronous API — storing users, test runs, and request samples |
 | Real-time | `ws` (raw WebSocket) | No abstraction layer — direct exposure to connection lifecycle and message broadcasting |
 | Frontend | React + Vite | Fast dev loop, component-based UI |
 | Charts | Recharts | Composable chart primitives (line, bar, dual-axis) |
@@ -41,22 +45,28 @@ Most "full-stack project" tutorials are CRUD apps with a database and a form. Th
 
 ```
 frontend/ (React + Vite, port 5173)
+  ├─ User Authentication & Profile modal (Sign in, Sign up, Password strength, Demo login)
   ├─ Single Request / Load Test / History / Compare / Scaling Test / Workflow tabs
   ├─ WebSocket client — live progress during load tests
   └─ Recharts — latency, status breakdown, and scaling charts
 
 backend/ (Express, port 4000 + WebSocket on 4001)
+  ├─ /api/auth/register     — user registration with bcrypt hashing
+  ├─ /api/auth/login        — user authentication & JWT issuance
+  ├─ /api/auth/me           — verify token & retrieve active user
+  ├─ /api/auth/profile      — update full name & password
   ├─ /api/request           — single request proxy + timing
-  ├─ /api/load-test         — concurrent load test (uses ConcurrencyLimiter)
-  ├─ /api/test-runs         — saved run history (list + detail)
+  ├─ /api/load-test         — concurrent load test (linked to user_id)
+  ├─ /api/test-runs         — saved run history (all runs or user-filtered)
   ├─ /api/compare           — diff two saved runs
   ├─ /api/scaling-test      — sequential runs across concurrency levels
   ├─ /api/workflow          — multi-step chained requests
+  ├─ auth.js                — JWT verification, bcrypt hashing, user management
   ├─ concurrencyLimiter.js  — promise-based concurrency cap, built from scratch
   ├─ metrics.js             — avg/min/max/P50/P95/P99/throughput calculation
   ├─ insights.js            — rule-based performance flagging
   ├─ workflow.js            — variable extraction + substitution engine
-  └─ loadtester.db          — SQLite file (test_runs + requests tables)
+  └─ loadtester.db          — SQLite file (users + test_runs + requests tables)
 ```
 
 ### How a load test actually works
@@ -65,7 +75,7 @@ backend/ (Express, port 4000 + WebSocket on 4001)
 2. Each completed request is timed with `performance.now()` and pushed into a results array.
 3. As each request finishes, its result is broadcast over WebSocket to any connected frontend, enabling live progress.
 4. Once all requests settle (`Promise.allSettled`, so failures don't abort the batch), `calculateMetrics` computes aggregate stats — including percentiles via sorted-array indexing.
-5. The run and every individual request are persisted to SQLite.
+5. The run and every individual request are persisted to SQLite, associated with the authenticated user ID if signed in.
 6. `generateInsights` runs a small set of threshold-based rules against the metrics and flags anything notable.
 
 ### A real finding this tool produced
@@ -100,9 +110,13 @@ Open the frontend URL, and both servers need to be running simultaneously.
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/api/auth/register` | Register a new user account |
+| POST | `/api/auth/login` | Log in and receive JWT token |
+| GET | `/api/auth/me` | Fetch authenticated user profile |
+| PUT | `/api/auth/profile` | Update profile name or password |
 | POST | `/api/request` | Send a single API request |
 | POST | `/api/load-test` | Run a concurrent load test |
-| GET | `/api/test-runs` | List all saved test runs |
+| GET | `/api/test-runs` | List saved test runs (supports `?userOnly=true`) |
 | GET | `/api/test-runs/:id` | Get one run's full detail |
 | GET | `/api/compare?runA=&runB=` | Diff two runs |
 | POST | `/api/scaling-test` | Run a concurrency-scaling test |
