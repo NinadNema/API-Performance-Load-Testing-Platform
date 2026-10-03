@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const db = require("./db");
 
 const JWT_SECRET = process.env.JWT_SECRET || "pulseapi_jwt_super_secret_key_2026";
-const JWT_EXPIRES_IN = "7d";
+const JWT_EXPIRES_IN = "30d";
 
 function sanitizeUser(user) {
   if (!user) return null;

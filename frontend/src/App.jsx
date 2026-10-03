@@ -491,23 +491,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const savedUser = getStoredUser();
+    if (savedUser) {
+      fetchTestRuns(false, savedUser);
+    }
     apiGetMe().then((user) => {
       if (user) {
         setCurrentUser(user);
-      } else {
+        fetchTestRuns(false, user);
+      } else if (getStoredToken() && !user) {
         setCurrentUser(null);
+        setTestRuns([]);
       }
     });
   }, []);
 
-  async function fetchTestRuns(userOnly = filterUserOnly) {
-    if (!currentUser) {
+  async function fetchTestRuns(userOnly = filterUserOnly, activeUser = currentUser) {
+    const user = activeUser || currentUser || getStoredUser();
+    if (!user) {
       setGuestRuns(getGuestSessionRuns());
       return;
     }
 
     try {
-      const url = userOnly && currentUser?.id
+      const url = userOnly && user?.id
         ? "http://localhost:4000/api/test-runs?userOnly=true"
         : "http://localhost:4000/api/test-runs";
       const res = await authFetch(url);

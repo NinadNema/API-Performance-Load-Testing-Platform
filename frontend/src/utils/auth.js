@@ -147,19 +147,21 @@ export async function apiGetMe() {
 
   try {
     const res = await authFetch("/api/auth/me");
-    if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
       clearAuthStorage();
       return null;
+    }
+    if (!res.ok) {
+      return getStoredUser();
     }
     const data = await res.json();
     if (data.success && data.user) {
       setStoredUser(data.user);
       return data.user;
     }
-    clearAuthStorage();
-    return null;
+    return getStoredUser();
   } catch {
-    return null;
+    return getStoredUser();
   }
 }
 
