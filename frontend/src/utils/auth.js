@@ -4,9 +4,10 @@ const TOKEN_KEY = "pulseapi_auth_token";
 const USER_KEY = "pulseapi_user_profile";
 const GUEST_RUNS_KEY = "pulseapi_guest_session_runs";
 
+// Use sessionStorage so when user closes the application/tab, they are automatically signed out
 export function getStoredToken() {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return sessionStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
@@ -15,10 +16,12 @@ export function getStoredToken() {
 export function setStoredToken(token) {
   try {
     if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
+      sessionStorage.setItem(TOKEN_KEY, token);
     } else {
-      localStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(TOKEN_KEY);
     }
+    // Clean up any legacy localStorage tokens
+    localStorage.removeItem(TOKEN_KEY);
   } catch {
     void 0;
   }
@@ -26,7 +29,7 @@ export function setStoredToken(token) {
 
 export function getStoredUser() {
   try {
-    const raw = localStorage.getItem(USER_KEY);
+    const raw = sessionStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -36,10 +39,12 @@ export function getStoredUser() {
 export function setStoredUser(user) {
   try {
     if (user) {
-      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      sessionStorage.setItem(USER_KEY, JSON.stringify(user));
     } else {
-      localStorage.removeItem(USER_KEY);
+      sessionStorage.removeItem(USER_KEY);
     }
+    // Clean up any legacy localStorage profile
+    localStorage.removeItem(USER_KEY);
   } catch {
     void 0;
   }
@@ -47,6 +52,8 @@ export function setStoredUser(user) {
 
 export function clearAuthStorage() {
   try {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USER_KEY);
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   } catch {
