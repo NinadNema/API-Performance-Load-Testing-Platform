@@ -17,6 +17,7 @@ import AuthModal from "./components/AuthModal";
 import UserMenu from "./components/UserMenu";
 import {
   getStoredUser,
+  getStoredToken,
   apiGetMe,
   clearAuthStorage,
   authFetch,
@@ -27,6 +28,7 @@ import {
   apiSaveSessionRun,
   apiBulkSaveSessionRuns,
 } from "./utils/auth";
+import "./workstation.css";
 
 function MetricCard({ label, value, highlight = false, unit = "", subtitle = "" }) {
   return (
@@ -183,24 +185,24 @@ function LatencyChart({ results }) {
       <div style={{ width: "100%", height: 260 }}>
         <ResponsiveContainer>
           <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis dataKey="request" stroke="var(--text-dim)" fontSize={11} interval="preserveStartEnd" />
             <YAxis stroke="var(--text-dim)" fontSize={11} unit="ms" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#0f172a",
-                borderColor: "rgba(255,255,255,0.15)",
-                borderRadius: "8px",
-                color: "#f8fafc",
+                backgroundColor: "var(--bg-card)",
+                borderColor: "var(--border-medium)",
+                borderRadius: "4px",
+                color: "var(--text-primary)",
                 fontSize: "0.8rem",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
               }}
             />
             <Line
               type="monotone"
               dataKey="latency"
               name="Latency (ms)"
-              stroke="#38bdf8"
+              stroke="var(--accent)"
               strokeWidth={2}
               dot={{ r: 2 }}
               activeDot={{ r: 5 }}
@@ -236,19 +238,19 @@ function StatusBreakdownChart({ results }) {
       <div style={{ width: "100%", height: 200 }}>
         <ResponsiveContainer>
           <BarChart data={data} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis dataKey="status" stroke="var(--text-dim)" fontSize={11} />
             <YAxis stroke="var(--text-dim)" fontSize={11} />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#0f172a",
-                borderColor: "rgba(255,255,255,0.15)",
-                borderRadius: "8px",
-                color: "#f8fafc",
+                backgroundColor: "var(--bg-card)",
+                borderColor: "var(--border-medium)",
+                borderRadius: "4px",
+                color: "var(--text-primary)",
                 fontSize: "0.8rem",
               }}
             />
-            <Bar dataKey="count" name="Count" fill="#818cf8" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="count" name="Count" fill="var(--accent)" radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -276,16 +278,16 @@ function ScalingChart({ runs }) {
       <div style={{ width: "100%", height: 280 }}>
         <ResponsiveContainer>
           <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis dataKey="concurrency" stroke="var(--text-dim)" fontSize={11} />
-            <YAxis yAxisId="left" stroke="#38bdf8" fontSize={11} unit="ms" />
-            <YAxis yAxisId="right" orientation="right" stroke="#34d399" fontSize={11} unit=" rps" />
+            <YAxis yAxisId="left" stroke="var(--accent)" fontSize={11} unit="ms" />
+            <YAxis yAxisId="right" orientation="right" stroke="var(--success)" fontSize={11} unit=" rps" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#0f172a",
-                borderColor: "rgba(255,255,255,0.15)",
-                borderRadius: "8px",
-                color: "#f8fafc",
+                backgroundColor: "var(--bg-card)",
+                borderColor: "var(--border-medium)",
+                borderRadius: "4px",
+                color: "var(--text-primary)",
                 fontSize: "0.8rem",
               }}
             />
@@ -294,7 +296,7 @@ function ScalingChart({ runs }) {
               type="monotone"
               dataKey="avgMs"
               name="Avg Latency (ms)"
-              stroke="#38bdf8"
+              stroke="var(--accent)"
               strokeWidth={2}
               dot={{ r: 4 }}
             />
@@ -303,7 +305,7 @@ function ScalingChart({ runs }) {
               type="monotone"
               dataKey="p95Ms"
               name="P95 Latency (ms)"
-              stroke="#f59e0b"
+              stroke="#9a9a91"
               strokeWidth={2}
               dot={{ r: 4 }}
             />
@@ -312,7 +314,7 @@ function ScalingChart({ runs }) {
               type="monotone"
               dataKey="throughput"
               name="Throughput (req/s)"
-              stroke="#34d399"
+              stroke="var(--success)"
               strokeWidth={2}
               dot={{ r: 4 }}
             />
@@ -333,7 +335,7 @@ function StatusBadge({ status }) {
 
 const PRESETS = [
   {
-    name: "⚡ Standard Load (20 VUs)",
+    name: "Standard load · 20 VUs",
     mode: "load",
     method: "GET",
     url: "https://jsonplaceholder.typicode.com/posts/1",
@@ -343,7 +345,7 @@ const PRESETS = [
     body: "",
   },
   {
-    name: "🚀 High Burst (50 VUs)",
+    name: "High burst · 50 VUs",
     mode: "load",
     method: "GET",
     url: "https://jsonplaceholder.typicode.com/posts/1",
@@ -353,7 +355,7 @@ const PRESETS = [
     body: "",
   },
   {
-    name: "📈 Step Scaling Matrix",
+    name: "Step scaling matrix",
     mode: "scaling",
     method: "GET",
     url: "https://jsonplaceholder.typicode.com/posts/1",
@@ -361,12 +363,19 @@ const PRESETS = [
     scalingReqs: 20,
   },
   {
-    name: "🔗 Chained User Workflow",
+    name: "Chained workflow",
     mode: "workflow",
   },
 ];
 
 export default function App() {
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem("pulseapi_theme") === "light" ? "light" : "dark";
+    } catch {
+      return "dark";
+    }
+  });
   const [currentUser, setCurrentUser] = useState(getStoredUser());
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState("login");
@@ -404,7 +413,6 @@ export default function App() {
   const [response, setResponse] = useState(null);
   const [singleResponseTab, setSingleResponseTab] = useState("body");
 
-  const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef(null);
 
   const [testRuns, setTestRuns] = useState([]);
@@ -451,15 +459,20 @@ export default function App() {
   const [workflowLoading, setWorkflowLoading] = useState(false);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("pulseapi_theme", theme);
+    } catch {
+      // The selected theme still applies for this session if storage is unavailable.
+    }
+  }, [theme]);
+
+  useEffect(() => {
     let reconnectTimeout = null;
 
     function connectWs() {
       const ws = new WebSocket("ws://localhost:4001");
       wsRef.current = ws;
-
-      ws.onopen = () => {
-        setWsConnected(true);
-      };
 
       ws.onmessage = (event) => {
         try {
@@ -473,7 +486,6 @@ export default function App() {
       };
 
       ws.onclose = () => {
-        setWsConnected(false);
         reconnectTimeout = setTimeout(connectWs, 3000);
       };
 
@@ -1086,15 +1098,13 @@ export default function App() {
   });
 
   return (
-    <div className="app-container">
+    <div className="app-container" data-theme={theme}>
       <header className="app-header">
         <div className="brand">
-          <div className="brand-icon">⚡</div>
+          <div className="brand-icon">P</div>
           <div>
-            <h1>PulseAPI Platform</h1>
-            <div className="brand-subtitle">
-              High-Throughput Load Tester, Statistical Latency Analyzer & Diagnostics
-            </div>
+            <h1>PulseAPI</h1>
+            <div className="brand-subtitle">API PERFORMANCE LAB</div>
           </div>
         </div>
 
@@ -1108,14 +1118,20 @@ export default function App() {
               setShowImportModal(true);
             }}
           >
-            <span>📥</span>
-            <span>Import API (cURL / Swagger / Postman)</span>
+            <span>Import collection</span>
           </button>
 
-          <div className="ws-status">
-            <div className={`status-dot ${wsConnected ? "connected" : ""}`} />
-            <span>{wsConnected ? "Live Socket Active" : "Socket Reconnecting..."}</span>
-          </div>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={() => setTheme((currentTheme) => currentTheme === "dark" ? "light" : "dark")}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-pressed={theme === "light"}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            <span aria-hidden="true">{theme === "dark" ? "☼" : "☾"}</span>
+            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+          </button>
 
           <UserMenu
             currentUser={currentUser}
@@ -1130,7 +1146,7 @@ export default function App() {
       </header>
 
       <div className="presets-bar">
-        <span className="presets-label">⚡ Quick Presets:</span>
+        <span className="presets-label">Quick targets</span>
         {PRESETS.map((p, i) => (
           <button
             key={i}
@@ -1144,16 +1160,17 @@ export default function App() {
 
       <nav className="nav-tabs">
         {[
-          { id: "load", label: "Load Benchmark", icon: "🚀" },
-          { id: "single", label: "Single Request", icon: "🎯" },
-          { id: "scaling", label: "Scaling Matrix", icon: "📈" },
-          { id: "workflow", label: "Workflow Chain", icon: "🔗" },
-          { id: "compare", label: "Compare Runs", icon: "⚖️" },
-          { id: "history", label: "History & Logs", icon: "📜" },
+          { id: "load", label: "Load test", icon: "01" },
+          { id: "single", label: "Request", icon: "02" },
+          { id: "scaling", label: "Scaling", icon: "03" },
+          { id: "workflow", label: "Workflow", icon: "04" },
+          { id: "compare", label: "Compare", icon: "05" },
+          { id: "history", label: "History", icon: "06" },
         ].map((tab) => (
           <button
             key={tab.id}
             className={`nav-tab ${mode === tab.id ? "active" : ""}`}
+            aria-current={mode === tab.id ? "page" : undefined}
             onClick={() => {
               setMode(tab.id);
               if (tab.id === "history" || tab.id === "compare") {
@@ -1166,6 +1183,21 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      <section className="workstation-intro">
+        <div className="workstation-copy">
+          <div className="workstation-eyebrow">PERFORMANCE WORKSTATION / LOCAL</div>
+          <h2>Measure what your API does under pressure.</h2>
+          <p>Send requests, simulate concurrent traffic, and inspect latency, throughput, and failures.</p>
+        </div>
+        <div className="session-indicator">
+          <span className={`session-dot ${currentUser ? "account" : "guest"}`} />
+          <div>
+            <strong>{currentUser ? `SIGNED IN / @${currentUser.username}` : "GUEST SESSION"}</strong>
+            <span>{currentUser ? "Runs are saved to your account" : "Test now; save runs to an account later"}</span>
+          </div>
+        </div>
+      </section>
 
       {(mode === "single" || mode === "load" || mode === "scaling") && (
         <section className="card">
@@ -1282,7 +1314,7 @@ export default function App() {
                       checked={useMultiCore}
                       onChange={(e) => setUseMultiCore(e.target.checked)}
                     />
-                    <span>⚡ Multi-Core Engine</span>
+                    <span>Multi-core engine</span>
                   </label>
                   {useMultiCore && (
                     <select
@@ -1308,7 +1340,7 @@ export default function App() {
                       checked={enableSlaBudget}
                       onChange={(e) => setEnableSlaBudget(e.target.checked)}
                     />
-                    <span>🎯 Enforce SLA Performance Budget & Assertions</span>
+                    <span>Enforce SLA performance budget</span>
                   </label>
                   <span style={{ fontSize: "0.75rem", color: enableSlaBudget ? "var(--accent)" : "var(--text-dim)", fontWeight: 600 }}>
                     {enableSlaBudget ? "Active Evaluation" : "Disabled"}
@@ -1432,7 +1464,7 @@ export default function App() {
                   else prettyPrintJson(body, setBody);
                 }}
               >
-                ✨ Format JSON
+                Format JSON
               </button>
             </div>
 
@@ -1461,7 +1493,7 @@ export default function App() {
         <section className="card">
           <div className="progress-container">
             <div className="progress-labels">
-              <span>🚀 Dispatching Concurrent Virtual User Load...</span>
+              <span>Dispatching concurrent request load</span>
               <span style={{ fontFamily: "var(--font-mono)" }}>
                 {progress.completed} / {progress.total} requests (
                 {Math.round((progress.completed / (progress.total || 1)) * 100)}%)
@@ -1548,7 +1580,7 @@ export default function App() {
       {mode === "load" && response && response.metrics && (
         <section className="card">
           <div className="card-title">
-            <span>Load Benchmark Analytics Dashboard</span>
+            <span>Run metrics</span>
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
               {!currentUser && (
                 <button
@@ -1576,11 +1608,7 @@ export default function App() {
               )}
               <button
                 className="btn-primary"
-                style={{
-                  padding: "0.45rem 0.95rem",
-                  fontSize: "0.8rem",
-                  background: "linear-gradient(135deg, #0284c7, #2563eb)",
-                }}
+                style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem" }}
                 onClick={() =>
                   generateExecutivePdfReport({
                     run: { url, method, concurrency, total_requests: totalRequests },
@@ -1636,7 +1664,7 @@ export default function App() {
           {response.insights && response.insights.length > 0 && (
             <div>
               <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 700 }}>
-                Performance Intelligence & Root-Cause Diagnostics
+                Performance insights
               </div>
               <InsightsList insights={response.insights} />
             </div>
@@ -1657,7 +1685,7 @@ export default function App() {
             <span>Scaling Matrix Results (Group #{scalingResult.scalingGroupId})</span>
             <button
               className="btn-primary"
-              style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem", background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
+              style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem" }}
               onClick={() =>
                 generateExecutivePdfReport({
                   run: { url, method, concurrency: "Stepped Matrix", total_requests: scalingReqs * scalingResult.runs.length },
@@ -2012,10 +2040,20 @@ export default function App() {
           </div>
 
           {filteredRuns.length === 0 ? (
-            <div style={{ color: "var(--text-dim)", textAlign: "center", padding: "2.5rem" }}>
-              {currentUser
-                ? "No test runs recorded matching your search. Execute a Load Test to persist runs here."
-                : "No runs recorded in your current guest session. Run a test to view session data here."}
+            <div className="empty-state">
+              <strong>{historySearch ? "No runs match this search." : "No performance runs yet."}</strong>
+              <p>
+                {historySearch
+                  ? "Try another URL, method, or run ID."
+                  : currentUser
+                  ? "Run a load test to start building your performance history."
+                  : "Run your first load test to start a temporary session history. Sign in later to save runs."}
+              </p>
+              {!historySearch && (
+                <button className="btn-primary" onClick={() => setMode("load")}>
+                  Configure a load test
+                </button>
+              )}
             </div>
           ) : (
             <table className="data-table">
@@ -2121,11 +2159,7 @@ export default function App() {
                 )}
                 <button
                   className="btn-primary"
-                  style={{
-                    padding: "0.4rem 0.85rem",
-                    fontSize: "0.8rem",
-                    background: "linear-gradient(135deg, #0284c7, #2563eb)",
-                  }}
+                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem" }}
                   onClick={() =>
                     generateExecutivePdfReport({
                       run: selectedRunDetail.run,
