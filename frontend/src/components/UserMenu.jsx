@@ -27,7 +27,6 @@ export default function UserMenu({
           onClick={() => onOpenAuth("login")}
           title="Sign in or create an account"
         >
-          <span className="auth-key-icon">🔑</span>
           <span>Sign In / Register</span>
         </button>
       </div>
