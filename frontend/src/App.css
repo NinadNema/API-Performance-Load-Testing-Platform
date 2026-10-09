@@ -1153,6 +1153,8 @@
 }
 
 .auth-form input {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -1524,5 +1526,4 @@
 .toast-close-btn:hover {
   color: #ffffff;
 }
-
 
