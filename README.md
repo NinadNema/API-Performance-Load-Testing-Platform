@@ -24,7 +24,7 @@ Most "full-stack project" tutorials are CRUD apps with a database and a form. Th
 - **Concurrency scaling tests** — automatically run the same test at increasing concurrency levels (e.g. 1, 5, 10, 25) and chart how P95 latency and throughput change as load increases
 - **Guest Testing & Temporary Session Memory** — Use full load testing capabilities without signing in. Guest history is held in transient browser session memory and automatically wiped when closing the application.
 - **Save & Claim Session Runs to Account** — Save any test run or bulk-save an entire guest session directly to your permanent account when you log in or register.
-- **Authentication & User Management** — Register accounts, secure bcrypt password hashing, JWT session management, user profile settings, and 1-click instant demo mode
+- **Authentication & User Management** — Register accounts, secure bcrypt password hashing, JWT session management, and user profile settings
 - **User-associated Test Runs** — Automatically links benchmark runs to authenticated users with filterable "My Runs" vs "All Runs" views
 - **Multi-step workflows** — chain requests together, extracting values from one response (e.g. an auth token) and substituting them into a later request
 
@@ -45,7 +45,7 @@ Most "full-stack project" tutorials are CRUD apps with a database and a form. Th
 
 ```
 frontend/ (React + Vite, port 5173)
-  ├─ User Authentication & Profile modal (Sign in, Sign up, Password strength, Demo login)
+  ├─ User Authentication & Profile modal (Sign in, Sign up, Password strength)
   ├─ Single Request / Load Test / History / Compare / Scaling Test / Workflow tabs
   ├─ WebSocket client — live progress during load tests
   └─ Recharts — latency, status breakdown, and scaling charts
