@@ -83,40 +83,6 @@ export default function AuthModal({
     }
   }
 
-  async function handleDemoLogin() {
-    setError("");
-    setSuccessMsg("");
-    setLoading(true);
-    try {
-      // Try to login with demo account, or register demo account if first time
-      try {
-        const data = await apiLogin("demo_engineer", "PulseDev2026!");
-        setSuccessMsg(`Logged in as Demo Engineer!`);
-        setTimeout(() => {
-          onAuthSuccess(data.user);
-          onClose();
-        }, 500);
-      } catch {
-        // Register demo user if not yet created
-        const regData = await apiRegister({
-          username: "demo_engineer",
-          email: "demo@pulseapi.dev",
-          password: "PulseDev2026!",
-          fullName: "Demo Lead Engineer",
-        });
-        setSuccessMsg(`Demo account created and logged in!`);
-        setTimeout(() => {
-          onAuthSuccess(regData.user);
-          onClose();
-        }, 500);
-      }
-    } catch (err) {
-      setError("Could not launch demo account: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleRegister(e) {
     e.preventDefault();
     setError("");
@@ -315,19 +281,6 @@ export default function AuthModal({
                 disabled={loading}
               >
                 {loading ? "Signing in..." : "Sign In to PulseAPI 🚀"}
-              </button>
-
-              <div className="auth-divider">
-                <span>or quick test</span>
-              </div>
-
-              <button
-                type="button"
-                className="btn-secondary demo-login-btn"
-                onClick={handleDemoLogin}
-                disabled={loading}
-              >
-                <span>⚡ 1-Click Instant Demo Login</span>
               </button>
             </div>
 
