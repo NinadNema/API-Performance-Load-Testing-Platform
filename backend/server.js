@@ -388,9 +388,9 @@ app.get("/api/test-runs/:id", (req, res) => {
         `SELECT t.*, u.username as owner_username, u.full_name as owner_name 
          FROM test_runs t 
          LEFT JOIN users u ON t.user_id = u.id 
-         WHERE t.id = ?`
+         WHERE t.id = ? ${req.user?.id ? "AND t.user_id = ?" : ""}`
       )
-      .get(req.params.id);
+      .get(req.params.id, ...(req.user?.id ? [req.user.id] : []));
 
     if (!run) {
       return res.status(404).json({ success: false, error: "Test run not found" });
@@ -436,12 +436,20 @@ app.delete("/api/test-runs/:id", (req, res) => {
       return res.json({ success: true, message: "Deleted from session" });
     }
 
-    const deleteReqs = db.prepare("DELETE FROM requests WHERE test_run_id = ?");
-    const deleteRun = db.prepare("DELETE FROM test_runs WHERE id = ? AND user_id = ?");
+    const owned = db
+      .prepare("SELECT id FROM test_runs WHERE id = ? AND user_id = ?")
+      .get(req.params.id, req.user.id);
+
+    if (!owned) {
+      return res.status(404).json({ success: false, error: "Test run not found" });
+    }
 
     db.transaction(() => {
-      deleteReqs.run(req.params.id);
-      deleteRun.run(req.params.id, req.user.id);
+      db.prepare("DELETE FROM requests WHERE test_run_id = ?").run(req.params.id);
+      db.prepare("DELETE FROM test_runs WHERE id = ? AND user_id = ?").run(
+        req.params.id,
+        req.user.id
+      );
     })();
 
     res.json({ success: true, message: "Test run deleted" });

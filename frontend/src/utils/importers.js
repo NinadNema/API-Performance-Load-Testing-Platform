@@ -27,7 +27,7 @@ export function parseCurlCommand(curlStr) {
     }
   }
 
-  const dataRegex = /(?:-d|--data|--data-raw|--data-binary)\s+['"]([\s\S]*?)['"](?=\s+(?:-[a-zA-Z]|--[a-zA-Z]|$))/i;
+  const dataRegex = /(?:-d|--data|--data-raw|--data-binary)\s+['"]([\s\S]*?)['"](?=\s+-{1,2}[a-zA-Z]|\s*$)/i;
   const dataMatch = clean.match(dataRegex);
   if (dataMatch) {
     body = dataMatch[1];
