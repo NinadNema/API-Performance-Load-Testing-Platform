@@ -27,7 +27,7 @@
   --text-primary: #f0f0e9;
   --text-secondary: #c5c5bb;
   --text-muted: #92938a;
-  --text-dim: #73746c;
+  --text-dim: #a0a197;
 
   --accent: #ef8b45;
   --accent-secondary: #ef8b45;
@@ -90,7 +90,7 @@
   --text-primary: #29271f;
   --text-secondary: #49463e;
   --text-muted: #6d685e;
-  --text-dim: #898276;
+  --text-dim: #716b60;
   --accent: #b95b20;
   --accent-secondary: #b95b20;
   --accent-gradient: #b95b20;
@@ -154,7 +154,8 @@ html {
 body {
   background: var(--bg-base);
   color: var(--text-primary);
-  line-height: 1.55;
+  font-size: 1rem;
+  line-height: 1.65;
 }
 
 button,
@@ -223,7 +224,7 @@ textarea:focus {
   border-radius: 3px;
   background: var(--control-surface);
   color: var(--text-secondary);
-  font-size: 0.74rem;
+  font-size: 0.82rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -267,18 +268,17 @@ textarea:focus {
   color: var(--text-primary);
   background: none;
   -webkit-text-fill-color: currentColor;
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 700;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
 }
 
 .brand-subtitle {
   margin-top: 1px;
   color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 0.59rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.02em;
 }
 
 .header-actions {
@@ -287,7 +287,7 @@ textarea:focus {
 
 .header-actions > .btn-secondary {
   padding: 0.48rem 0.7rem;
-  font-size: 0.76rem;
+  font-size: 0.85rem;
 }
 
 .session-dot {
@@ -317,8 +317,8 @@ textarea:focus {
   padding-right: 0.35rem;
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  letter-spacing: 0;
 }
 
 .preset-chip {
@@ -328,7 +328,7 @@ textarea:focus {
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.67rem;
+  font-size: 0.8rem;
 }
 
 .preset-chip:hover {
@@ -361,14 +361,14 @@ textarea:focus {
   border-bottom: 2px solid transparent;
   border-radius: 0;
   color: var(--text-muted);
-  font-size: 0.76rem;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 
 .nav-tab > span:first-child {
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 0.58rem;
+  font-size: 0.7rem;
 }
 
 .nav-tab:hover:not(:disabled) {
@@ -405,9 +405,9 @@ textarea:focus {
   margin-bottom: 0.48rem;
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.76rem;
   font-weight: 600;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.04em;
 }
 
 .workstation-copy h2 {
@@ -415,14 +415,15 @@ textarea:focus {
   color: var(--text-primary);
   font-size: clamp(1.35rem, 2.5vw, 2rem);
   font-weight: 600;
-  letter-spacing: -0.055em;
-  line-height: 1.2;
+  letter-spacing: -0.025em;
+  line-height: 1.3;
 }
 
 .workstation-copy p {
   margin-top: 0.45rem;
   color: var(--text-muted);
-  font-size: 0.84rem;
+  font-size: 0.95rem;
+  line-height: 1.65;
 }
 
 .session-indicator {
@@ -449,15 +450,13 @@ textarea:focus {
 
 .session-indicator strong {
   color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.63rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
 }
 
 .session-indicator span:not(.session-dot) {
   color: var(--text-dim);
-  font-size: 0.67rem;
+  font-size: 0.82rem;
 }
 
 .card {
@@ -477,9 +476,9 @@ textarea:focus {
 .card-title {
   gap: 0.75rem;
   color: var(--text-primary);
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 650;
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
 }
 
 .request-bar {
@@ -503,7 +502,7 @@ textarea:focus {
   background: var(--control-surface);
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.9rem;
 }
 
 .method-GET,
@@ -520,7 +519,7 @@ textarea:focus {
   min-width: 0;
   padding: 0.55rem 0.65rem;
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: 0.9rem;
 }
 
 .url-input::placeholder {
@@ -534,7 +533,7 @@ textarea:focus {
   background: var(--accent);
   box-shadow: none;
   color: #17130f;
-  font-size: 0.76rem;
+  font-size: 0.85rem;
   font-weight: 700;
 }
 
@@ -552,7 +551,7 @@ textarea:focus {
   border-radius: 3px;
   background: var(--control-surface);
   color: var(--text-secondary);
-  font-size: 0.74rem;
+  font-size: 0.85rem;
 }
 
 .btn-secondary:hover:not(:disabled),
@@ -582,9 +581,9 @@ textarea:focus {
 
 .option-group label {
   color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 0.63rem;
-  letter-spacing: 0.055em;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .option-input {
@@ -592,7 +591,7 @@ textarea:focus {
   padding: 0.4rem 0.55rem;
   border-radius: 3px;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
 }
 
 .budget-collapsible {
@@ -616,7 +615,7 @@ textarea:focus {
   padding: 0.42rem 0.68rem;
   border-radius: 2px;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 0.82rem;
 }
 
 .sub-tab.active {
@@ -631,7 +630,7 @@ textarea:focus {
   border-radius: 4px;
   background: var(--code-surface);
   color: var(--text-secondary);
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   line-height: 1.65;
 }
 
@@ -642,7 +641,7 @@ textarea:focus {
 .progress-labels {
   gap: 0.8rem;
   color: var(--text-secondary);
-  font-size: 0.76rem;
+  font-size: 0.85rem;
 }
 
 .progress-track {
@@ -685,16 +684,17 @@ textarea:focus {
 
 .metric-label {
   color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 0.61rem;
-  letter-spacing: 0.07em;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .metric-value {
   color: var(--text-primary);
   font-size: clamp(1.1rem, 2vw, 1.5rem);
   font-weight: 600;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.02em;
 }
 
 .metric-value.highlight {
@@ -740,14 +740,16 @@ textarea:focus {
 
 .insight-category-badge {
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .data-table {
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   background: var(--table-surface);
-  font-size: 0.73rem;
+  font-size: 0.85rem;
 }
 
 .data-table th {
@@ -756,8 +758,9 @@ textarea:focus {
   background: var(--table-header);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.61rem;
-  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -778,7 +781,7 @@ textarea:focus {
 .badge {
   border-radius: 3px;
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.78rem;
 }
 
 .badge-2xx {
@@ -923,14 +926,14 @@ textarea:focus {
 
 .empty-state strong {
   color: var(--text-primary);
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
 .empty-state p {
   max-width: 48ch;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.9rem;
 }
 
 .empty-state .btn-primary {
@@ -980,12 +983,12 @@ textarea:focus {
 
   .header-actions > .btn-secondary {
     margin-right: auto;
-    font-size: 0.68rem;
+    font-size: 0.82rem;
   }
 
   .theme-toggle {
     padding: 0.42rem 0.55rem;
-    font-size: 0.68rem;
+    font-size: 0.82rem;
   }
 
   .presets-bar {
@@ -998,7 +1001,7 @@ textarea:focus {
 
   .nav-tab {
     padding: 0.5rem 0.6rem;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
   }
 
   .workstation-intro {
@@ -1010,11 +1013,11 @@ textarea:focus {
 
   .workstation-copy h2 {
     max-width: 22ch;
-    font-size: 1.45rem;
+    font-size: 1.5rem;
   }
 
   .workstation-copy p {
-    font-size: 0.76rem;
+    font-size: 0.9rem;
   }
 
   .session-indicator {

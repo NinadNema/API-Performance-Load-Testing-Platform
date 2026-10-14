@@ -72,8 +72,6 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
 }
 
@@ -86,7 +84,7 @@ body {
 button {
   cursor: pointer;
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
   transition: all var(--transition-normal);
@@ -112,7 +110,7 @@ input, select, textarea {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   padding: 0.65rem 0.95rem;
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   outline: none;
   transition: all var(--transition-normal);
 }
