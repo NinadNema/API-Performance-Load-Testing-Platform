@@ -1,102 +1,40 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 
-export default function UserMenu({
-  currentUser,
-  onOpenAuth,
-  onLogout,
-  onViewMyRuns,
-}) {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  if (!currentUser) {
-    return (
-      <div className="auth-header-trigger">
-        <button
-          className="btn-auth-signin"
-          onClick={() => onOpenAuth("login")}
-          title="Sign in or create an account"
-        >
-          <span>Sign In / Register</span>
-        </button>
-      </div>
-    );
-  }
-
-  const displayName = currentUser.fullName || currentUser.username || "Developer";
-  const initial = displayName.charAt(0).toUpperCase();
+export default function UserMenu({ currentUser, onViewHistory, onLogout }) {
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="user-menu-container" ref={menuRef}>
+    <div className="user-menu-container">
       <button
         className="user-profile-chip"
-        onClick={() => setDropdownOpen(!dropdownOpen)}
-        aria-expanded={dropdownOpen}
+        onClick={() => setMenuOpen((open) => !open)}
+        aria-expanded={menuOpen}
       >
-        <div className="user-avatar-small">{initial}</div>
-        <div className="user-profile-chip-info">
-          <span className="user-profile-chip-name">{displayName}</span>
-          <span className="user-profile-chip-role">{currentUser.role || "Developer"}</span>
-        </div>
-        <span className={`dropdown-chevron ${dropdownOpen ? "open" : ""}`}>▼</span>
+        <span className="user-avatar-small">
+          {(currentUser.fullName || currentUser.username || "U").charAt(0).toUpperCase()}
+        </span>
+        <span>{currentUser.fullName || currentUser.username}</span>
+        <span aria-hidden="true">⌄</span>
       </button>
-
-      {dropdownOpen && (
+      {menuOpen && (
         <div className="user-dropdown-menu">
-          <div className="user-dropdown-header">
-            <div className="user-avatar-med">{initial}</div>
-            <div className="user-dropdown-userinfo">
-              <div className="user-dropdown-name">{displayName}</div>
-              <div className="user-dropdown-email">{currentUser.email}</div>
-              <span className="user-role-badge">@{currentUser.username}</span>
-            </div>
-          </div>
-
-          <div className="user-dropdown-divider" />
-
           <button
             className="user-dropdown-item"
             onClick={() => {
-              setDropdownOpen(false);
-              onOpenAuth("profile");
+              setMenuOpen(false);
+              onViewHistory();
             }}
           >
-            <span className="dropdown-item-icon">👤</span>
-            <span>Profile & Security</span>
+            View saved history
           </button>
-
-          <button
-            className="user-dropdown-item"
-            onClick={() => {
-              setDropdownOpen(false);
-              onViewMyRuns();
-            }}
-          >
-            <span className="dropdown-item-icon">📜</span>
-            <span>My Benchmark History</span>
-          </button>
-
-          <div className="user-dropdown-divider" />
-
           <button
             className="user-dropdown-item logout-item"
             onClick={() => {
-              setDropdownOpen(false);
+              setMenuOpen(false);
               onLogout();
             }}
           >
-            <span className="dropdown-item-icon">🚪</span>
-            <span>Sign Out</span>
+            Sign out
           </button>
         </div>
       )}

@@ -1,138 +1,87 @@
-# API Performance & Load Testing Platform
+# PulseAPI: Beginner API Load Tester
 
-A full-stack, locally-run tool for testing API performance under concurrent load — built from scratch to understand concurrency, performance measurement, and real-time systems, not just to produce a CRUD app.
-
-Send single requests, run controlled concurrent load tests, watch live progress over WebSocket, visualize latency/throughput/status codes, compare test runs to catch regressions, run automated concurrency-scaling tests to find an API's breaking point, and chain multi-step workflows where one request's response feeds the next.
-
-Everything runs locally — no cloud services, no paid APIs, no external dependencies beyond `npm install`.
-
----
-
-## Why this exists
-
-Most "full-stack project" tutorials are CRUD apps with a database and a form. This is different: it's a small, from-scratch performance-engineering tool that required actually understanding — not just using — concurrency control, percentile statistics, real-time communication, and API design under failure conditions. Every metric, chart, and insight in this tool is backed by logic written and verified from first principles, including hand-checked test cases for the trickier math (percentiles, throughput, comparison deltas).
+PulseAPI is a local full-stack project for sending API requests and measuring how an API responds to a small amount of concurrent traffic. It uses React, Express, Axios, and SQLite.
 
 ## Features
 
-- **Single request tester** — send any method/URL/headers/body, see status, timing, and response
-- **Concurrent load testing** — configure concurrency (virtual users) and total requests; a custom-built concurrency limiter enforces the exact cap in real time
-- **Live progress** — WebSocket-pushed updates as each request completes, streamed into the UI while a test is running
-- **Real performance metrics** — average, min/max, **P50/P95/P99 latency**, success rate, error rate, throughput (req/s)
-- **Visual dashboard** — latency-over-time line chart, status code breakdown, all rendered with Recharts
-- **Persistent history** — every test run and every individual request is saved to SQLite; browse past runs anytime
-- **Run comparison** — pick two saved runs and get a metric-by-metric diff with automatic improved/degraded/unchanged verdicts
-- **Concurrency scaling tests** — automatically run the same test at increasing concurrency levels (e.g. 1, 5, 10, 25) and chart how P95 latency and throughput change as load increases
-- **Guest Testing & Temporary Session Memory** — Use full load testing capabilities without signing in. Guest history is held in transient browser session memory and automatically wiped when closing the application.
-- **Save & Claim Session Runs to Account** — Save any test run or bulk-save an entire guest session directly to your permanent account when you log in or register.
-- **Authentication & User Management** — Register accounts, secure bcrypt password hashing, JWT session management, and user profile settings
-- **User-associated Test Runs** — Automatically links benchmark runs to authenticated users with filterable "My Runs" vs "All Runs" views
-- **Multi-step workflows** — chain requests together, extracting values from one response (e.g. an auth token) and substituting them into a later request
+- Send one GET, POST, PUT, DELETE, or PATCH request.
+- Set request headers, a request body, and a timeout.
+- Run a load test with a configurable number of concurrent requests and total requests.
+- View average, minimum, maximum, and P95 latency, success rate, throughput, and a latency chart.
+- Register and sign in with a username/email and password.
+- Save load-test results to a private SQLite history associated with the signed-in account.
+- View and delete saved runs.
+
+Load tests require sign-in so each saved run belongs to an account. Single requests can be sent without signing in.
 
 ## Tech stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Backend | Node.js + Express | Minimal framework — routing and middleware stay visible rather than hidden behind conventions |
-| Auth & Security | bcryptjs + jsonwebtoken | Secure salted password hashing and industry-standard JWT authentication tokens |
-| Concurrency | Custom `ConcurrencyLimiter` (hand-built) | Built from scratch to actually understand promise-based concurrency control, not just call a library |
-| Database | SQLite via `better-sqlite3` | Single-file, zero-setup, synchronous API — storing users, test runs, and request samples |
-| Real-time | `ws` (raw WebSocket) | No abstraction layer — direct exposure to connection lifecycle and message broadcasting |
-| Frontend | React + Vite | Fast dev loop, component-based UI |
-| Charts | Recharts | Composable chart primitives (line, bar, dual-axis) |
-| HTTP client | Axios | Used both for the single-request tester and as the engine behind every concurrent load test request |
+- **Frontend:** React, Vite, Recharts
+- **Backend:** Node.js, Express, Axios
+- **Authentication:** bcryptjs password hashing and JSON Web Tokens
+- **Database:** SQLite with `better-sqlite3`
+- **Concurrency:** A small promise-based concurrency limiter
 
-## Architecture
+## Run locally
 
-```
-frontend/ (React + Vite, port 5173)
-  ├─ User Authentication & Profile modal (Sign in, Sign up, Password strength)
-  ├─ Single Request / Load Test / History / Compare / Scaling Test / Workflow tabs
-  ├─ WebSocket client — live progress during load tests
-  └─ Recharts — latency, status breakdown, and scaling charts
+Prerequisites: Node.js 18 or newer and npm.
 
-backend/ (Express, port 4000 + WebSocket on 4001)
-  ├─ /api/auth/register     — user registration with bcrypt hashing
-  ├─ /api/auth/login        — user authentication & JWT issuance
-  ├─ /api/auth/me           — verify token & retrieve active user
-  ├─ /api/auth/profile      — update full name & password
-  ├─ /api/request           — single request proxy + timing
-  ├─ /api/load-test         — concurrent load test (linked to user_id)
-  ├─ /api/test-runs         — saved run history (all runs or user-filtered)
-  ├─ /api/compare           — diff two saved runs
-  ├─ /api/scaling-test      — sequential runs across concurrency levels
-  ├─ /api/workflow          — multi-step chained requests
-  ├─ auth.js                — JWT verification, bcrypt hashing, user management
-  ├─ concurrencyLimiter.js  — promise-based concurrency cap, built from scratch
-  ├─ metrics.js             — avg/min/max/P50/P95/P99/throughput calculation
-  ├─ insights.js            — rule-based performance flagging
-  ├─ workflow.js            — variable extraction + substitution engine
-  └─ loadtester.db          — SQLite file (users + test_runs + requests tables)
-```
+Start the backend:
 
-### How a load test actually works
-
-1. `ConcurrencyLimiter` caps how many requests are ever "in flight" at once, queuing the rest until a slot frees up — a rolling window, not fixed batches.
-2. Each completed request is timed with `performance.now()` and pushed into a results array.
-3. As each request finishes, its result is broadcast over WebSocket to any connected frontend, enabling live progress.
-4. Once all requests settle (`Promise.allSettled`, so failures don't abort the batch), `calculateMetrics` computes aggregate stats — including percentiles via sorted-array indexing.
-5. The run and every individual request are persisted to SQLite, associated with the authenticated user ID if signed in.
-6. `generateInsights` runs a small set of threshold-based rules against the metrics and flags anything notable.
-
-### A real finding this tool produced
-
-Running a concurrency-scaling test (1 → 5 → 10 → 25) against a public test API surfaced a genuine breaking point: throughput collapsed **91%** and the success rate dropped as concurrency hit 25, with one request hitting the 10-second timeout. The insights engine flagged both automatically. This wasn't a synthetic example — it's real behavior this tool discovered and measured.
-
-## Getting started
-
-### Prerequisites
-- Node.js (v18+ recommended)
-- npm
-
-### Backend
-```bash
+```powershell
 cd backend
 npm install
 npm run dev
 ```
-Runs on `http://localhost:4000` (HTTP) and `ws://localhost:4001` (WebSocket).
 
-### Frontend
-```bash
+The backend runs at `http://localhost:4000`.
+
+In another terminal, start the frontend:
+
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
-Runs on `http://localhost:5173`.
 
-Open the frontend URL, and both servers need to be running simultaneously.
+Open the Vite URL shown in the terminal, usually `http://localhost:5173`.
+
+## How a load test works
+
+1. The frontend sends the test settings to the Express API.
+2. The backend uses a concurrency limiter to keep simultaneous requests under the selected limit.
+3. Each request's duration and HTTP status are recorded.
+4. The backend calculates summary metrics and saves the run and request results in SQLite.
+5. The frontend displays the metrics and request-latency chart.
 
 ## API endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/auth/register` | Register a new user account |
-| POST | `/api/auth/login` | Log in and receive JWT token |
-| GET | `/api/auth/me` | Fetch authenticated user profile |
-| PUT | `/api/auth/profile` | Update profile name or password |
-| POST | `/api/request` | Send a single API request |
-| POST | `/api/load-test` | Run a concurrent load test |
-| GET | `/api/test-runs` | List saved test runs (supports `?userOnly=true`) |
-| GET | `/api/test-runs/:id` | Get one run's full detail |
-| GET | `/api/compare?runA=&runB=` | Diff two runs |
-| POST | `/api/scaling-test` | Run a concurrency-scaling test |
-| GET | `/api/scaling-test/:groupId` | Retrieve a scaling test's grouped runs |
-| POST | `/api/workflow` | Run a multi-step chained workflow |
+| POST | `/api/auth/register` | Create an account |
+| POST | `/api/auth/login` | Sign in and receive a token |
+| GET | `/api/auth/me` | Get the signed-in account |
+| POST | `/api/request` | Send a single request |
+| POST | `/api/load-test` | Run and save an authenticated load test |
+| GET | `/api/test-runs` | List the signed-in user's runs |
+| GET | `/api/test-runs/:id` | View one saved run |
+| DELETE | `/api/test-runs/:id` | Delete one saved run |
+| DELETE | `/api/test-runs` | Delete all of the signed-in user's runs |
 
-## What I learned building this
+## Project structure
 
-- **Concurrency isn't parallelism** — Node's single-threaded event loop handles many in-flight I/O operations by not blocking on any one of them; the `ConcurrencyLimiter` here is a promise-based semaphore built to enforce an exact concurrency cap, verified with timestamped test output before ever touching real HTTP requests.
-- **Averages lie; percentiles tell the truth.** A P50/P95 gap of several hundred milliseconds shows up constantly in real API responses (even to well-behaved public test APIs) — this project's charts make that gap visible instead of hidden inside a single averaged number.
-- **Silent failures are the hardest bugs.** Wrong property names, mismatched export shapes, and misplaced JSX don't always throw — they just quietly produce `undefined`, `NaN`, or nothing rendered at all. Most of the real debugging in this project was learning to trust evidence (console logs, curl output, hand-predicted expected values) over assumptions.
-- **Validate at the boundary.** Every endpoint checks its inputs before doing real work; every response distinguishes "the request itself failed" from "the request succeeded but returned an error status" — a distinction that matters a lot once you're aggregating hundreds of results.
+```text
+backend/
+  auth.js                 Account registration, login, and token checks
+  concurrencyLimiter.js   Limits simultaneous requests
+  db.js                   SQLite setup
+  loadTestRunner.js       Sends requests for a load test
+  metrics.js              Calculates test metrics
+  saveTestRun.js          Saves runs and request results
+  server.js               Express routes
 
-## Possible next steps
-
-- Export test results as PDF/CSV
-- Gradual ramp-up load pattern (instead of instant concurrency)
-- Dockerize for one-command startup
-- Reconnect logic for the WebSocket client
+frontend/src/
+  App.jsx                 Request, load-test, results, and history screens
+  components/             Sign-in form and account menu
+  utils/auth.js           Authentication requests and browser session
+```

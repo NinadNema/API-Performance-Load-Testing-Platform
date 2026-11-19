@@ -1,0 +1,189 @@
+.beginner-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.beginner-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.beginner-form-grid .code-editor {
+  min-height: 120px;
+}
+
+.beginner-help {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.beginner-alert {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.toast-notification {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 3000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  width: min(420px, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card-solid);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+  animation: fadeIn 160ms ease-out;
+}
+
+.toast-success {
+  border-color: var(--success-border);
+}
+
+.toast-error {
+  border-color: var(--danger-border);
+}
+
+.toast-close {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.toast-close:hover {
+  color: var(--text-primary);
+}
+
+.confirmation-card {
+  width: min(460px, calc(100vw - 2rem));
+}
+
+.confirmation-card h2 {
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.confirmation-card p {
+  color: var(--text-muted);
+}
+
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.beginner-response {
+  max-height: 420px;
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+.response-object {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.response-entry {
+  display: grid;
+  grid-template-columns: minmax(90px, 150px) minmax(0, 1fr);
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.response-key {
+  color: var(--accent);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.response-value {
+  min-width: 0;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.response-entry > .response-object {
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border-medium);
+}
+
+.beginner-table-wrap {
+  overflow-x: auto;
+}
+
+.beginner-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.beginner-run-modal {
+  width: min(900px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.beginner-run-modal .metrics-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.beginner-run-modal .metric-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.beginner-run-modal .card-title {
+  gap: 1rem;
+}
+
+@media (max-width: 700px) {
+  .toast-notification {
+    top: 0.75rem;
+    right: 0.75rem;
+    width: calc(100vw - 1.5rem);
+  }
+
+  .beginner-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .response-entry {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  .beginner-run-modal .card-title {
+    align-items: flex-start;
+  }
+
+  .beginner-run-modal .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

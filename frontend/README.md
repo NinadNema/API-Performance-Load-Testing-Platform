@@ -1,16 +1,16 @@
-# React + Vite
+# PulseAPI frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React and Vite frontend provides three screens:
 
-Currently, two official plugins are available:
+- **Load Test:** configure and run a concurrent test. Sign in first to save it to your account.
+- **Single Request:** send one HTTP request without signing in.
+- **History:** view and delete load tests saved to your account.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+To run it locally, start the backend first, then run:
 
-## React Compiler
+```powershell
+npm install
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The frontend connects to the backend at `http://localhost:4000`.

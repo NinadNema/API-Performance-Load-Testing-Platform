@@ -12,8 +12,6 @@ function sanitizeUser(user) {
     username: user.username,
     email: user.email,
     fullName: user.full_name || user.fullName || user.username,
-    role: user.role || "developer",
-    avatarSeed: user.avatar_seed || user.username,
     createdAt: user.created_at || user.createdAt,
   };
 }
@@ -32,7 +30,6 @@ function generateToken(user) {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role || "developer",
     },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
@@ -44,20 +41,8 @@ const findUserByUsernameStmt = db.prepare("SELECT * FROM users WHERE LOWER(usern
 const findUserByIdStmt = db.prepare("SELECT * FROM users WHERE id = ?");
 
 const insertUserStmt = db.prepare(`
-  INSERT INTO users (username, email, password_hash, full_name, role, avatar_seed)
-  VALUES (?, ?, ?, ?, ?, ?)
-`);
-
-const updateProfileStmt = db.prepare(`
-  UPDATE users 
-  SET full_name = ?, updated_at = CURRENT_TIMESTAMP
-  WHERE id = ?
-`);
-
-const updatePasswordStmt = db.prepare(`
-  UPDATE users 
-  SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
-  WHERE id = ?
+  INSERT INTO users (username, email, password_hash, full_name)
+  VALUES (?, ?, ?, ?)
 `);
 
 async function registerUser({ username, email, password, fullName }) {
@@ -86,15 +71,12 @@ async function registerUser({ username, email, password, fullName }) {
   }
 
   const passwordHash = await hashPassword(password);
-  const avatarSeed = cleanUsername;
 
   const result = insertUserStmt.run(
     cleanUsername,
     cleanEmail,
     passwordHash,
-    cleanFullName,
-    "developer",
-    avatarSeed
+    cleanFullName
   );
 
   const createdUser = findUserByIdStmt.get(result.lastInsertRowid);
@@ -136,40 +118,6 @@ async function loginUser({ identifier, password }) {
   };
 }
 
-function getUserById(id) {
-  const user = findUserByIdStmt.get(id);
-  return sanitizeUser(user);
-}
-
-async function updateUserProfile(id, { fullName, currentPassword, newPassword }) {
-  const user = findUserByIdStmt.get(id);
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  if (fullName && typeof fullName === "string") {
-    updateProfileStmt.run(fullName.trim(), id);
-  }
-
-  if (newPassword) {
-    if (!currentPassword) {
-      throw new Error("Current password is required to change password");
-    }
-    const isMatch = await comparePassword(currentPassword, user.password_hash);
-    if (!isMatch) {
-      throw new Error("Current password is incorrect");
-    }
-    if (newPassword.length < 6) {
-      throw new Error("New password must be at least 6 characters long");
-    }
-    const newHash = await hashPassword(newPassword);
-    updatePasswordStmt.run(newHash, id);
-  }
-
-  const updatedUser = findUserByIdStmt.get(id);
-  return sanitizeUser(updatedUser);
-}
-
 function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
@@ -191,36 +139,8 @@ function authenticateToken(req, res, next) {
   });
 }
 
-function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
-
-  if (!token) {
-    req.user = null;
-    return next();
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (!err && decoded?.id) {
-      const user = findUserByIdStmt.get(decoded.id);
-      if (user) {
-        req.user = sanitizeUser(user);
-      }
-    }
-    next();
-  });
-}
-
 module.exports = {
-  JWT_SECRET,
-  hashPassword,
-  comparePassword,
-  generateToken,
-  sanitizeUser,
   registerUser,
   loginUser,
-  getUserById,
-  updateUserProfile,
   authenticateToken,
-  optionalAuth,
 };

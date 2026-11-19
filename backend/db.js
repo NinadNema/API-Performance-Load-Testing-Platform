@@ -8,10 +8,7 @@ db.exec(`
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         full_name TEXT,
-        role TEXT DEFAULT 'developer',
-        avatar_seed TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS test_runs (
@@ -25,12 +22,9 @@ db.exec(`
         avg_ms REAL,
         min_ms REAL,
         max_ms REAL,
-        p50 REAL,
         p95 REAL,
-        p99 REAL,
         success_rate REAL,
         throughput_rps REAL,
-        scaling_group_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     );

@@ -1,31 +1,6 @@
 const API_BASE = "http://localhost:4000";
-
 const TOKEN_KEY = "pulseapi_auth_token";
 const USER_KEY = "pulseapi_user_profile";
-const GUEST_RUNS_KEY = "pulseapi_guest_session_runs";
-
-// Use sessionStorage so when user closes the application/tab, they are automatically signed out
-export function getStoredToken() {
-  try {
-    return sessionStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setStoredToken(token) {
-  try {
-    if (token) {
-      sessionStorage.setItem(TOKEN_KEY, token);
-    } else {
-      sessionStorage.removeItem(TOKEN_KEY);
-    }
-    // Clean up any legacy localStorage tokens
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    void 0;
-  }
-}
 
 export function getStoredUser() {
   try {
@@ -36,17 +11,12 @@ export function getStoredUser() {
   }
 }
 
-export function setStoredUser(user) {
+function storeAuth(data) {
   try {
-    if (user) {
-      sessionStorage.setItem(USER_KEY, JSON.stringify(user));
-    } else {
-      sessionStorage.removeItem(USER_KEY);
-    }
-    // Clean up any legacy localStorage profile
-    localStorage.removeItem(USER_KEY);
+    sessionStorage.setItem(TOKEN_KEY, data.token);
+    sessionStorage.setItem(USER_KEY, JSON.stringify(data.user));
   } catch {
-    void 0;
+    throw new Error("Could not save your sign-in session in this browser.");
   }
 }
 
@@ -57,172 +27,69 @@ export function clearAuthStorage() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   } catch {
-    void 0;
-  }
-}
-
-// Session-only Guest History (cleared automatically when browser/tab closes)
-export function getGuestSessionRuns() {
-  try {
-    const raw = sessionStorage.getItem(GUEST_RUNS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function addGuestSessionRun(run) {
-  try {
-    const existing = getGuestSessionRuns();
-    const updated = [run, ...existing.filter((r) => r.id !== run.id)].slice(0, 50);
-    sessionStorage.setItem(GUEST_RUNS_KEY, JSON.stringify(updated));
-    return updated;
-  } catch {
-    return [];
-  }
-}
-
-export function removeGuestSessionRun(runId) {
-  try {
-    const existing = getGuestSessionRuns();
-    const updated = existing.filter((r) => r.id !== runId);
-    sessionStorage.setItem(GUEST_RUNS_KEY, JSON.stringify(updated));
-    return updated;
-  } catch {
-    return [];
-  }
-}
-
-export function clearGuestSessionRuns() {
-  try {
-    sessionStorage.removeItem(GUEST_RUNS_KEY);
-  } catch {
-    void 0;
+    // The session is cleared in memory even if browser storage is unavailable.
   }
 }
 
 export async function authFetch(url, options = {}) {
-  const token = getStoredToken();
   const headers = new Headers(options.headers || {});
-
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
+  try {
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  } catch {
+    // Requests can still be made without a stored token.
   }
-
-  const mergedOptions = {
-    ...options,
-    headers,
-  };
 
   const finalUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
-  return fetch(finalUrl, mergedOptions);
+  return fetch(finalUrl, { ...options, headers });
 }
 
-export async function apiRegister({ username, email, password, fullName }) {
-  const res = await fetch(`${API_BASE}/api/auth/register`, {
+async function postAuth(path, payload) {
+  const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, email, password, fullName }),
+    body: JSON.stringify(payload),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || "Registration failed");
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || "Authentication failed");
   }
-  setStoredToken(data.token);
-  setStoredUser(data.user);
+  storeAuth(data);
   return data;
 }
 
-export async function apiLogin(identifier, password) {
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier, password }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || "Login failed");
-  }
-  setStoredToken(data.token);
-  setStoredUser(data.user);
-  return data;
+export function apiRegister({ username, email, password, fullName }) {
+  return postAuth("/api/auth/register", { username, email, password, fullName });
+}
+
+export function apiLogin(identifier, password) {
+  return postAuth("/api/auth/login", { identifier, password });
 }
 
 export async function apiGetMe() {
-  const token = getStoredToken();
+  let token;
+  try {
+    token = sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
   if (!token) return null;
 
   try {
-    const res = await authFetch("/api/auth/me");
-    if (res.status === 401 || res.status === 403) {
+    const response = await authFetch("/api/auth/me");
+    if (!response.ok) {
       clearAuthStorage();
       return null;
     }
-    if (!res.ok) {
-      return getStoredUser();
-    }
-    const data = await res.json();
+    const data = await response.json();
     if (data.success && data.user) {
-      setStoredUser(data.user);
+      sessionStorage.setItem(USER_KEY, JSON.stringify(data.user));
       return data.user;
     }
-    return getStoredUser();
+    return null;
   } catch {
     return getStoredUser();
   }
-}
-
-export async function apiUpdateProfile({ fullName, currentPassword, newPassword }) {
-  const res = await authFetch("/api/auth/profile", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fullName, currentPassword, newPassword }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || "Failed to update profile");
-  }
-  setStoredUser(data.user);
-  return data.user;
-}
-
-export async function apiSaveSessionRun(runData) {
-  const res = await authFetch("/api/test-runs/save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(runData),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || "Failed to save test run to account");
-  }
-  return data;
-}
-
-export async function apiBulkSaveSessionRuns(runs) {
-  const res = await authFetch("/api/test-runs/bulk-save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ runs }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || "Failed to save session runs to account");
-  }
-  return data;
-}
-
-export function evaluatePasswordStrength(password) {
-  if (!password) return { score: 0, label: "Empty", color: "#64748b" };
-
-  let score = 0;
-  if (password.length >= 6) score += 1;
-  if (password.length >= 10) score += 1;
-  if (/[A-Z]/.test(password)) score += 1;
-  if (/[0-9]/.test(password)) score += 1;
-  if (/[^A-Za-z0-9]/.test(password)) score += 1;
-
-  if (score <= 2) return { score, label: "Weak", color: "#f43f5e", percent: 33 };
-  if (score <= 4) return { score, label: "Good", color: "#f59e0b", percent: 66 };
-  return { score, label: "Strong", color: "#10b981", percent: 100 };
 }

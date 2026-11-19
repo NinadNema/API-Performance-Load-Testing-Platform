@@ -1,793 +1,197 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  LineChart,
+  CartesianGrid,
   Line,
-  BarChart,
-  Bar,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from "recharts";
 import "./App.css";
-import { autoDetectAndParse } from "./utils/importers";
-import { generateExecutivePdfReport } from "./utils/generatePdfReport";
+import "./beginner.css";
+import "./workstation.css";
 import AuthModal from "./components/AuthModal";
 import UserMenu from "./components/UserMenu";
 import {
-  getStoredUser,
-  getStoredToken,
   apiGetMe,
-  clearAuthStorage,
   authFetch,
-  getGuestSessionRuns,
-  addGuestSessionRun,
-  removeGuestSessionRun,
-  clearGuestSessionRuns,
-  apiSaveSessionRun,
-  apiBulkSaveSessionRuns,
+  clearAuthStorage,
+  getStoredUser,
 } from "./utils/auth";
-import "./workstation.css";
 
-function MetricCard({ label, value, highlight = false, unit = "", subtitle = "" }) {
+const API_BASE = "http://localhost:4000";
+
+function MetricCard({ label, value, unit = "" }) {
   return (
     <div className="metric-card">
       <span className="metric-label">{label}</span>
-      <span className={`metric-value ${highlight ? "highlight" : ""}`}>
-        {value ?? "—"}{unit}
-      </span>
-      {subtitle && <span style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>{subtitle}</span>}
+      <span className="metric-value">{value ?? "—"}{unit}</span>
     </div>
   );
 }
 
-function getCategoryIcon(insight) {
-  if (insight.category === "rate_limit") return "🛑";
-  if (insight.category === "gateway_failure") return "⏱️";
-  if (insight.category === "server_exception") return "💥";
-  if (insight.category === "auth_failure") return "🔒";
-  if (insight.category === "network_timeout") return "📡";
-  if (insight.category === "cold_start") return "❄️";
-  if (insight.category === "high_jitter") return "〰️";
-  if (insight.category === "bimodal_distribution") return "🔀";
-  if (insight.category === "sweet_spot") return "🎯";
-  if (insight.category === "saturation_point") return "🧱";
-  if (insight.category === "scaling_efficiency") return "⚡";
-  if (insight.category === "throughput_collapse") return "📉";
-  if (insight.category?.startsWith("apdex")) return "⭐";
-  if (insight.level === "error") return "🚨";
-  if (insight.level === "warning") return "⚠️";
-  if (insight.level === "info") return "ℹ️";
-  return "✅";
-}
+function ResponseViewer({ value }) {
+  if (value === null || typeof value !== "object") {
+    return <div className="response-value">{value == null ? "No response body" : String(value)}</div>;
+  }
 
-function InsightsList({ insights }) {
-  if (!insights || insights.length === 0) return null;
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => [`[${index}]`, item])
+    : Object.entries(value);
 
   return (
-    <div className="insights-list">
-      {insights.map((ins, index) => (
-        <div key={index} className={`insight-item ${ins.level || "info"}`}>
-          <span className="insight-icon">{getCategoryIcon(ins)}</span>
-          <div className="insight-content">
-            {ins.category && (
-              <span className="insight-category-badge">{ins.category.replace(/_/g, " ")}</span>
-            )}
-            <div>{ins.message}</div>
-          </div>
+    <div className="response-object">
+      {entries.map(([key, item]) => (
+        <div className="response-entry" key={key}>
+          <span className="response-key">{key}</span>
+          <ResponseViewer value={item} />
         </div>
       ))}
     </div>
   );
 }
 
-function ApdexCard({ apdex }) {
-  if (!apdex) return null;
+function StatusBadge({ status }) {
+  if (!status) return <span className="badge badge-err">Network error</span>;
+  const kind = status < 300 ? "badge-2xx" : status < 400 ? "badge-3xx" : status < 500 ? "badge-4xx" : "badge-5xx";
+  return <span className={`badge ${kind}`}>{status}</span>;
+}
 
-  const ratingClass =
-    apdex.score >= 0.94
-      ? "apdex-excellent"
-      : apdex.score >= 0.85
-      ? "apdex-good"
-      : apdex.score >= 0.70
-      ? "apdex-fair"
-      : apdex.score >= 0.50
-      ? "apdex-poor"
-      : "apdex-unacceptable";
-
-  const total = (apdex.satisfied || 0) + (apdex.tolerating || 0) + (apdex.frustrated || 0) || 1;
-  const satPct = Math.round(((apdex.satisfied || 0) / total) * 100);
-  const tolPct = Math.round(((apdex.tolerating || 0) / total) * 100);
-  const fruPct = Math.round(((apdex.frustrated || 0) / total) * 100);
+function ToastNotification({ toast, onClose }) {
+  if (!toast) return null;
 
   return (
-    <div className={`apdex-card ${ratingClass}`}>
-      <div className="apdex-header">
-        <div className="apdex-title">
-          <span>Apdex User Satisfaction Index</span>
-          <span className="apdex-badge">{apdex.rating}</span>
-        </div>
-        <div className="apdex-score-display">{apdex.score.toFixed(2)}</div>
-      </div>
-
-      <div className="apdex-progress-bar">
-        <div
-          className="apdex-bar satisfied"
-          style={{ width: `${satPct}%` }}
-          title={`Satisfied (${satPct}%)`}
-        />
-        <div
-          className="apdex-bar tolerating"
-          style={{ width: `${tolPct}%` }}
-          title={`Tolerating (${tolPct}%)`}
-        />
-        <div
-          className="apdex-bar frustrated"
-          style={{ width: `${fruPct}%` }}
-          title={`Frustrated (${fruPct}%)`}
-        />
-      </div>
-
-      <div className="apdex-stats">
-        <span>🟢 Satisfied ({satPct}%): <strong>{apdex.satisfied}</strong> (≤{apdex.targetLatencyMs}ms)</span>
-        <span>🟡 Tolerating ({tolPct}%): <strong>{apdex.tolerating}</strong> (≤{apdex.targetLatencyMs * 4}ms)</span>
-        <span>🔴 Frustrated ({fruPct}%): <strong>{apdex.frustrated}</strong> (&gt;{apdex.targetLatencyMs * 4}ms / errors)</span>
-      </div>
+    <div
+      className={`toast-notification toast-${toast.type}`}
+      role={toast.type === "error" ? "alert" : "status"}
+    >
+      <span>{toast.message}</span>
+      <button className="toast-close" onClick={onClose} aria-label="Dismiss notification">
+        ×
+      </button>
     </div>
   );
 }
 
-function SlaVerdictCard({ slaVerdict }) {
-  if (!slaVerdict) return null;
-  const passed = slaVerdict.passed;
+function ConfirmationCard({ confirmation, busy, onCancel, onConfirm }) {
+  if (!confirmation) return null;
 
   return (
-    <div className={`sla-card ${passed ? "sla-passed" : "sla-failed"}`}>
-      <div className="sla-header">
-        <span className="sla-badge">{passed ? "✓ SLA AUDIT PASSED" : "✗ SLA AUDIT FAILED"}</span>
-        <span className="sla-summary">{slaVerdict.summary}</span>
-      </div>
-      <div className="sla-rules-grid">
-        {slaVerdict.rules.map((rule, idx) => (
-          <div key={idx} className={`sla-rule-item ${rule.passed ? "rule-pass" : "rule-fail"}`}>
-            <div className="sla-rule-metric">{rule.metric}</div>
-            <div className="sla-rule-target">Target: <span>{rule.target}</span></div>
-            <div className="sla-rule-actual">Measured: <strong>{rule.actual}</strong></div>
-            <div className="sla-rule-status">{rule.passed ? "PASSED" : "FAILED"}</div>
-          </div>
-        ))}
-      </div>
+    <div className="modal-overlay" onClick={onCancel}>
+      <section
+        className="modal-content confirmation-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirmation-title"
+        aria-describedby="confirmation-message"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div>
+          <h2 id="confirmation-title">{confirmation.title}</h2>
+          <p id="confirmation-message">{confirmation.message}</p>
+        </div>
+        <div className="confirmation-actions">
+          <button className="btn-secondary" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn-danger" onClick={onConfirm} disabled={busy}>
+            {busy ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
 
 function LatencyChart({ results }) {
-  if (!results || results.length === 0) return null;
+  if (!results?.length) return null;
 
-  const chartData = results.map((r) => ({
-    request: `#${(r.requestIndex ?? 0) + 1}`,
-    latency: typeof r.durationMs === "number" ? r.durationMs : 0,
-    status: r.status || (r.success ? 200 : "ERR"),
-    success: r.success,
+  const data = results.map((result, index) => ({
+    request: index + 1,
+    latency: result.durationMs ?? result.duration_ms ?? 0,
   }));
 
   return (
     <div className="chart-wrapper">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-        <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
-          Per-Request Latency Timeline
-        </div>
-        <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-          {results.length} requests plotted
-        </div>
-      </div>
+      <h3>Request latency</h3>
       <div style={{ width: "100%", height: 260 }}>
         <ResponsiveContainer>
-          <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+          <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-            <XAxis dataKey="request" stroke="var(--text-dim)" fontSize={11} interval="preserveStartEnd" />
-            <YAxis stroke="var(--text-dim)" fontSize={11} unit="ms" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "var(--bg-card)",
-                borderColor: "var(--border-medium)",
-                borderRadius: "4px",
-                color: "var(--text-primary)",
-                fontSize: "0.8rem",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="latency"
-              name="Latency (ms)"
-              stroke="var(--accent)"
-              strokeWidth={2}
-              dot={{ r: 2 }}
-              activeDot={{ r: 5 }}
-            />
+            <XAxis dataKey="request" stroke="var(--text-dim)" />
+            <YAxis stroke="var(--text-dim)" unit="ms" />
+            <Tooltip />
+            <Line type="monotone" dataKey="latency" name="Latency (ms)" stroke="var(--accent)" dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
     </div>
   );
 }
-
-function StatusBreakdownChart({ results }) {
-  if (!results || results.length === 0) return null;
-
-  const counts = {};
-  results.forEach((r) => {
-    const code = r.status ? String(r.status) : "Network Err";
-    counts[code] = (counts[code] || 0) + 1;
-  });
-
-  const data = Object.entries(counts).map(([status, count]) => ({
-    status,
-    count,
-  }));
-
-  return (
-    <div className="chart-wrapper">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-        <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
-          HTTP Status Distribution
-        </div>
-      </div>
-      <div style={{ width: "100%", height: 200 }}>
-        <ResponsiveContainer>
-          <BarChart data={data} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-            <XAxis dataKey="status" stroke="var(--text-dim)" fontSize={11} />
-            <YAxis stroke="var(--text-dim)" fontSize={11} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "var(--bg-card)",
-                borderColor: "var(--border-medium)",
-                borderRadius: "4px",
-                color: "var(--text-primary)",
-                fontSize: "0.8rem",
-              }}
-            />
-            <Bar dataKey="count" name="Count" fill="var(--accent)" radius={[2, 2, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-function ScalingChart({ runs }) {
-  if (!runs || runs.length === 0) return null;
-
-  const chartData = runs.map((r) => ({
-    concurrency: `${r.concurrency} VUs`,
-    avgMs: r.metrics.avgMs,
-    p95Ms: r.metrics.p95,
-    throughput: r.metrics.throughputRps,
-  }));
-
-  return (
-    <div className="chart-wrapper">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-        <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
-          Scaling Profile: Latency vs. Throughput Curve
-        </div>
-      </div>
-      <div style={{ width: "100%", height: 280 }}>
-        <ResponsiveContainer>
-          <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-            <XAxis dataKey="concurrency" stroke="var(--text-dim)" fontSize={11} />
-            <YAxis yAxisId="left" stroke="var(--accent)" fontSize={11} unit="ms" />
-            <YAxis yAxisId="right" orientation="right" stroke="var(--success)" fontSize={11} unit=" rps" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "var(--bg-card)",
-                borderColor: "var(--border-medium)",
-                borderRadius: "4px",
-                color: "var(--text-primary)",
-                fontSize: "0.8rem",
-              }}
-            />
-            <Line
-              yAxisId="left"
-              type="monotone"
-              dataKey="avgMs"
-              name="Avg Latency (ms)"
-              stroke="var(--accent)"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-            />
-            <Line
-              yAxisId="left"
-              type="monotone"
-              dataKey="p95Ms"
-              name="P95 Latency (ms)"
-              stroke="#9a9a91"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-            />
-            <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="throughput"
-              name="Throughput (req/s)"
-              stroke="var(--success)"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }) {
-  if (!status) return <span className="badge badge-err">ERROR</span>;
-  if (status >= 200 && status < 300) return <span className="badge badge-2xx">{status} OK</span>;
-  if (status >= 300 && status < 400) return <span className="badge badge-3xx">{status} REDIRECT</span>;
-  if (status >= 400 && status < 500) return <span className="badge badge-4xx">{status} CLIENT ERR</span>;
-  return <span className="badge badge-5xx">{status} SERVER ERR</span>;
-}
-
-const PRESETS = [
-  {
-    name: "Standard load · 20 VUs",
-    mode: "load",
-    method: "GET",
-    url: "https://jsonplaceholder.typicode.com/posts/1",
-    concurrency: 5,
-    totalRequests: 20,
-    headers: '{\n  "Content-Type": "application/json"\n}',
-    body: "",
-  },
-  {
-    name: "High burst · 50 VUs",
-    mode: "load",
-    method: "GET",
-    url: "https://jsonplaceholder.typicode.com/posts/1",
-    concurrency: 25,
-    totalRequests: 100,
-    headers: '{\n  "Content-Type": "application/json"\n}',
-    body: "",
-  },
-  {
-    name: "Step scaling matrix",
-    mode: "scaling",
-    method: "GET",
-    url: "https://jsonplaceholder.typicode.com/posts/1",
-    scalingLevels: "1, 5, 10, 25",
-    scalingReqs: 20,
-  },
-  {
-    name: "Chained workflow",
-    mode: "workflow",
-  },
-];
 
 export default function App() {
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem("pulseapi_theme") === "light" ? "light" : "dark";
-    } catch {
-      return "dark";
-    }
-  });
   const [currentUser, setCurrentUser] = useState(getStoredUser());
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState("login");
-  const [filterUserOnly, setFilterUserOnly] = useState(false);
-  const [guestRuns, setGuestRuns] = useState(getGuestSessionRuns());
-  const [pendingSaveRun, setPendingSaveRun] = useState(null);
-  const [saveNotification, setSaveNotification] = useState("");
-
   const [mode, setMode] = useState("load");
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/posts/1");
   const [headers, setHeaders] = useState('{\n  "Content-Type": "application/json"\n}');
   const [body, setBody] = useState("");
-  const [timeout, setTimeoutVal] = useState(10000);
-  const [activeSubTab, setActiveSubTab] = useState("headers");
-
+  const [requestTimeout, setRequestTimeout] = useState(10000);
   const [concurrency, setConcurrency] = useState(5);
   const [totalRequests, setTotalRequests] = useState(20);
-  const [useMultiCore, setUseMultiCore] = useState(false);
-  const [workerCount, setWorkerCount] = useState(4);
-
-  const [enableSlaBudget, setEnableSlaBudget] = useState(false);
-  const [targetP95, setTargetP95] = useState(500);
-  const [targetP99, setTargetP99] = useState(1000);
-  const [maxErrorRate, setMaxErrorRate] = useState(1.0);
-  const [minApdex, setMinApdex] = useState(0.85);
-
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importInput, setImportInput] = useState("");
-  const [importError, setImportError] = useState("");
-  const [parsedEndpoints, setParsedEndpoints] = useState([]);
-
-  const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
-  const [singleResponseTab, setSingleResponseTab] = useState("body");
-
-  const wsRef = useRef(null);
-
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState(null);
   const [testRuns, setTestRuns] = useState([]);
-  const [historySearch, setHistorySearch] = useState("");
-  const [selectedRunDetail, setSelectedRunDetail] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-
-  const [compareRunA, setCompareRunA] = useState("");
-  const [compareRunB, setCompareRunB] = useState("");
-  const [compareResult, setCompareResult] = useState(null);
-  const [compareLoading, setCompareLoading] = useState(false);
-
-  const [scalingLevels, setScalingLevels] = useState("1, 5, 10, 25");
-  const [scalingReqs, setScalingReqs] = useState(20);
-  const [scalingResult, setScalingResult] = useState(null);
-  const [scalingLoading, setScalingLoading] = useState(false);
-
-  const [workflowSteps, setWorkflowSteps] = useState(
-    JSON.stringify(
-      [
-        {
-          name: "Fetch Post",
-          request: {
-            method: "GET",
-            url: "https://jsonplaceholder.typicode.com/posts/1",
-          },
-          extract: {
-            userId: "body.userId",
-          },
-        },
-        {
-          name: "Fetch Post Author",
-          request: {
-            method: "GET",
-            url: "https://jsonplaceholder.typicode.com/users/{{userId}}",
-          },
-        },
-      ],
-      null,
-      2
-    )
-  );
-  const [workflowResult, setWorkflowResult] = useState(null);
-  const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [selectedRun, setSelectedRun] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
+  const [confirmationBusy, setConfirmationBusy] = useState(false);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    if (!toast) return undefined;
+    const timerId = window.setTimeout(() => setToast(null), 3500);
+    return () => window.clearTimeout(timerId);
+  }, [toast]);
+
+  function showToast(message, type = "success") {
+    setToast({ message, type });
+  }
+
+  const loadHistory = useCallback(async () => {
     try {
-      localStorage.setItem("pulseapi_theme", theme);
-    } catch {
-      // The selected theme still applies for this session if storage is unavailable.
+      const res = await authFetch(`${API_BASE}/api/test-runs`);
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Could not load run history");
+      }
+      setTestRuns(data.runs);
+      setError("");
+    } catch (err) {
+      setError(err.message || "Could not load run history");
     }
-  }, [theme]);
-
-  useEffect(() => {
-    let reconnectTimeout = null;
-
-    function connectWs() {
-      const ws = new WebSocket("ws://localhost:4001");
-      wsRef.current = ws;
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "progress") {
-            setProgress({ completed: data.completed, total: data.total });
-          }
-        } catch (err) {
-          void err;
-        }
-      };
-
-      ws.onclose = () => {
-        reconnectTimeout = setTimeout(connectWs, 3000);
-      };
-
-      ws.onerror = () => {
-        ws.close();
-      };
-    }
-
-    connectWs();
-
-    return () => {
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (wsRef.current) wsRef.current.close();
-    };
   }, []);
 
   useEffect(() => {
-    const savedUser = getStoredUser();
-    if (savedUser) {
-      fetchTestRuns(false, savedUser);
-    }
     apiGetMe().then((user) => {
-      if (user) {
-        setCurrentUser(user);
-        fetchTestRuns(false, user);
-      } else if (getStoredToken() && !user) {
-        setCurrentUser(null);
-        setTestRuns([]);
-      }
+      setCurrentUser(user);
+      if (user) loadHistory();
     });
-  }, []);
+  }, [loadHistory]);
 
-  async function fetchTestRuns(userOnly = filterUserOnly, activeUser = currentUser) {
-    const user = activeUser || currentUser || getStoredUser();
-    if (!user) {
-      setGuestRuns(getGuestSessionRuns());
-      return;
-    }
-
-    try {
-      const url = userOnly && user?.id
-        ? "http://localhost:4000/api/test-runs?userOnly=true"
-        : "http://localhost:4000/api/test-runs";
-      const res = await authFetch(url);
-      const data = await res.json();
-      if (data.success) {
-        setTestRuns(data.runs);
-        if (data.runs.length >= 2) {
-          setCompareRunA(String(data.runs[0].id));
-          setCompareRunB(String(data.runs[1].id));
-        }
-      }
-    } catch {
-      void 0;
-    }
-  }
-
-  async function fetchRunDetail(runId) {
-    const isSessionRun =
-      String(runId).startsWith("session-") ||
-      String(runId).startsWith("guest-") ||
-      String(runId).startsWith("scaling-");
-
-    if (isSessionRun) {
-      const localRun = guestRuns.find((r) => String(r.id) === String(runId));
-      if (localRun) {
-        setSelectedRunDetail({
-          run: localRun,
-          metrics: localRun.metrics || {
-            totalRequests: localRun.total_requests,
-            avgMs: localRun.avg_ms,
-            minMs: localRun.min_ms,
-            maxMs: localRun.max_ms,
-            p50: localRun.p50,
-            p95: localRun.p95,
-            p99: localRun.p99,
-            successRate: localRun.success_rate,
-            throughputRps: localRun.throughput_rps,
-          },
-          requests: (localRun.results || []).map((r) => ({
-            requestIndex: r.requestIndex,
-            durationMs: r.durationMs,
-            status: r.status,
-            success: Boolean(r.success),
-          })),
-          apdex: localRun.apdex,
-          insights: localRun.insights,
-          slaVerdict: localRun.slaVerdict,
-        });
-        return;
-      }
-    }
-
-    setDetailLoading(true);
-    try {
-      const res = await authFetch(`http://localhost:4000/api/test-runs/${runId}`);
-      const data = await res.json();
-      if (data.success) {
-        setSelectedRunDetail(data);
-      }
-    } catch {
-      void 0;
-    } finally {
-      setDetailLoading(false);
-    }
-  }
-
-  async function handleDeleteRun(e, runId) {
-    e.stopPropagation();
-    const isSessionRun =
-      String(runId).startsWith("session-") ||
-      String(runId).startsWith("guest-") ||
-      String(runId).startsWith("scaling-");
-
-    if (isSessionRun) {
-      const updated = removeGuestSessionRun(runId);
-      setGuestRuns(updated);
-      if (selectedRunDetail?.run?.id === runId) {
-        setSelectedRunDetail(null);
-      }
-      return;
-    }
-
-    try {
-      const res = await authFetch(`http://localhost:4000/api/test-runs/${runId}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (data.success) {
-        setTestRuns((prev) => prev.filter((r) => r.id !== runId));
-        if (selectedRunDetail?.run?.id === runId) {
-          setSelectedRunDetail(null);
-        }
-      }
-    } catch {
-      void 0;
-    }
-  }
-
-  async function handleClearAllRuns() {
-    if (!currentUser) {
-      if (!window.confirm("Clear all temporary test runs from this guest session?")) return;
-      clearGuestSessionRuns();
-      setGuestRuns([]);
-      setSelectedRunDetail(null);
-      return;
-    }
-
-    if (!window.confirm("Are you sure you want to clear your saved test run history?")) return;
-    try {
-      const res = await authFetch("http://localhost:4000/api/test-runs", {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (data.success) {
-        setTestRuns([]);
-        setSelectedRunDetail(null);
-      }
-    } catch {
-      void 0;
-    }
-  }
-
-  function handleLogout() {
-    clearAuthStorage();
-    setCurrentUser(null);
-    setFilterUserOnly(false);
-    setGuestRuns(getGuestSessionRuns());
-    setTestRuns([]);
-  }
-
-  function handleViewMyRuns() {
-    setMode("history");
-    setFilterUserOnly(true);
-    fetchTestRuns(true);
-  }
-
-  async function handleSaveRunToAccount(runData) {
-    if (!runData) return;
-
-    if (!currentUser) {
-      setPendingSaveRun(runData);
-      setAuthModalTab("login");
-      setAuthModalOpen(true);
-      return;
-    }
-
-    try {
-      const payload = {
-        url: runData.url,
-        method: runData.method || "GET",
-        concurrency: Number(runData.concurrency) || 1,
-        totalRequests: Number(runData.total_requests || runData.totalRequests) || 1,
-        totalDurationMs: Number(runData.total_duration_ms || runData.totalDurationMs) || 0,
-        metrics: runData.metrics || {
-          avgMs: runData.avg_ms,
-          minMs: runData.min_ms,
-          maxMs: runData.max_ms,
-          p50: runData.p50,
-          p95: runData.p95,
-          p99: runData.p99,
-          successRate: runData.success_rate,
-          throughputRps: runData.throughput_rps,
-        },
-        results: runData.results || [],
-      };
-
-      const res = await apiSaveSessionRun(payload);
-      if (res.success) {
-        if (runData.id) {
-          const updated = removeGuestSessionRun(runData.id);
-          setGuestRuns(updated);
-        }
-        fetchTestRuns();
-        setSaveNotification("✅ Benchmark run successfully saved to your account!");
-        setTimeout(() => setSaveNotification(""), 4000);
-        if (selectedRunDetail?.run?.id === runData.id) {
-          setSelectedRunDetail((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  run: {
-                    ...prev.run,
-                    id: res.testRunId,
-                    isGuest: false,
-                    owner_username: currentUser.username,
-                  },
-                }
-              : null
-          );
-        }
-      }
-    } catch (err) {
-      alert(err.message || "Failed to save run");
-    }
-  }
-
-  async function handleBulkSaveGuestRuns() {
-    if (!currentUser || guestRuns.length === 0) return;
-    try {
-      const res = await apiBulkSaveSessionRuns(guestRuns);
-      if (res.success) {
-        clearGuestSessionRuns();
-        setGuestRuns([]);
-        fetchTestRuns();
-        setSaveNotification(`✅ Successfully saved ${res.count} session runs to your account!`);
-        setTimeout(() => setSaveNotification(""), 4000);
-      }
-    } catch (err) {
-      alert(err.message || "Failed to save session runs");
-    }
-  }
-
-  async function handleAuthSuccess(user) {
-    setCurrentUser(user);
-    fetchTestRuns();
-
-    if (pendingSaveRun) {
-      try {
-        const payload = {
-          url: pendingSaveRun.url,
-          method: pendingSaveRun.method || "GET",
-          concurrency: Number(pendingSaveRun.concurrency) || 1,
-          totalRequests: Number(pendingSaveRun.total_requests || pendingSaveRun.totalRequests) || 1,
-          totalDurationMs: Number(pendingSaveRun.total_duration_ms || pendingSaveRun.totalDurationMs) || 0,
-          metrics: pendingSaveRun.metrics || {
-            avgMs: pendingSaveRun.avg_ms,
-            minMs: pendingSaveRun.min_ms,
-            maxMs: pendingSaveRun.max_ms,
-            p50: pendingSaveRun.p50,
-            p95: pendingSaveRun.p95,
-            p99: pendingSaveRun.p99,
-            successRate: pendingSaveRun.success_rate,
-            throughputRps: pendingSaveRun.throughput_rps,
-          },
-          results: pendingSaveRun.results || [],
-        };
-        const res = await apiSaveSessionRun(payload);
-        if (res.success) {
-          if (pendingSaveRun.id) {
-            const updated = removeGuestSessionRun(pendingSaveRun.id);
-            setGuestRuns(updated);
-          }
-          fetchTestRuns();
-          setSaveNotification("✅ Benchmark run saved to your account!");
-          setTimeout(() => setSaveNotification(""), 4000);
-        }
-      } catch {
-        void 0;
-      } finally {
-        setPendingSaveRun(null);
-      }
-    }
-  }
-
-  function parseJsonPayloads() {
+  function parseRequestInput() {
     let parsedHeaders = {};
     if (headers.trim()) {
       try {
         parsedHeaders = JSON.parse(headers);
       } catch {
-        throw new Error("Headers must be valid JSON format (e.g. {\"Authorization\": \"Bearer ...\"})");
+        throw new Error("Headers must be valid JSON.");
+      }
+      if (!parsedHeaders || Array.isArray(parsedHeaders) || typeof parsedHeaders !== "object") {
+        throw new Error("Headers must be a JSON object.");
       }
     }
 
@@ -803,1133 +207,429 @@ export default function App() {
     return { parsedHeaders, parsedBody };
   }
 
-  function handleImportSubmit() {
-    setImportError("");
-    try {
-      const result = autoDetectAndParse(importInput);
-      if (result.type === "curl") {
-        const item = result.items[0];
-        setMethod(item.method);
-        setUrl(item.url);
-        setHeaders(JSON.stringify(item.headers, null, 2));
-        setBody(typeof item.body === "object" ? JSON.stringify(item.body, null, 2) : String(item.body || ""));
-        setShowImportModal(false);
-      } else {
-        setParsedEndpoints(result.items);
-      }
-    } catch (err) {
-      setImportError(err.message || "Failed to parse input.");
-    }
-  }
-
-  function handleSelectImportedEndpoint(ep, targetMode = "single") {
-    setMethod(ep.method);
-    setUrl(ep.url);
-    setHeaders(JSON.stringify(ep.headers || {}, null, 2));
-    setBody(typeof ep.body === "object" ? JSON.stringify(ep.body, null, 2) : String(ep.body || ""));
-    setMode(targetMode);
-    setShowImportModal(false);
-  }
-
-  function handleImportAsWorkflow() {
-    if (!parsedEndpoints || parsedEndpoints.length === 0) return;
-    const steps = parsedEndpoints.map((ep) => ({
-      name: ep.name || `${ep.method} ${ep.url}`,
-      request: {
-        method: ep.method,
-        url: ep.url,
-        headers: ep.headers,
-        body: ep.body ? (typeof ep.body === "string" ? JSON.parse(ep.body || "{}") : ep.body) : undefined,
-      },
-    }));
-    setWorkflowSteps(JSON.stringify(steps, null, 2));
-    setMode("workflow");
-    setShowImportModal(false);
-  }
-
-  function handleLoadPreset(preset) {
-    if (preset.mode) setMode(preset.mode);
-    if (preset.method) setMethod(preset.method);
-    if (preset.url) setUrl(preset.url);
-    if (preset.concurrency) setConcurrency(preset.concurrency);
-    if (preset.totalRequests) setTotalRequests(preset.totalRequests);
-    if (preset.headers) setHeaders(preset.headers);
-    if (preset.body !== undefined) setBody(preset.body);
-    if (preset.scalingLevels) setScalingLevels(preset.scalingLevels);
-    if (preset.scalingReqs) setScalingReqs(preset.scalingReqs);
-  }
-
-  function prettyPrintJson(text, setter) {
-    try {
-      const obj = JSON.parse(text);
-      setter(JSON.stringify(obj, null, 2));
-    } catch {
-      alert("Invalid JSON format");
-    }
-  }
-
-  async function handleSendSingleRequest() {
+  async function sendRequest() {
     setLoading(true);
     setResponse(null);
-
-    let payloads;
-    try {
-      payloads = parseJsonPayloads();
-    } catch (err) {
-      setResponse({ success: false, error: err.message });
-      setLoading(false);
-      return;
-    }
+    setError("");
 
     try {
-      const res = await authFetch("http://localhost:4000/api/request", {
+      const { parsedHeaders, parsedBody } = parseRequestInput();
+      const res = await authFetch(`${API_BASE}/api/request`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           method,
           url: url.trim(),
-          headers: payloads.parsedHeaders,
-          body: payloads.parsedBody,
-          timeout: Number(timeout) || 10000,
+          headers: parsedHeaders,
+          body: parsedBody,
+          timeout: Number(requestTimeout) || 10000,
         }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
       setResponse(data);
+      if (data.success) {
+        showToast(data.status >= 400 ? `Request returned HTTP ${data.status}` : "Request completed");
+      } else {
+        showToast(data.error || "The request failed", "error");
+      }
     } catch (err) {
-      setResponse({ success: false, error: err.message });
+      setError(err.message || "Could not send request");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleRunLoadTest() {
+  async function runLoadTest() {
+    if (!currentUser) {
+      setAuthModalTab("login");
+      setAuthModalOpen(true);
+      return;
+    }
+
     setLoading(true);
     setResponse(null);
-    setProgress({ completed: 0, total: totalRequests });
-
-    let payloads;
+    setError("");
     try {
-      payloads = parseJsonPayloads();
-    } catch (err) {
-      setResponse({ success: false, error: err.message });
-      setLoading(false);
-      return;
-    }
-
-    const slaBudget = enableSlaBudget
-      ? {
-          targetP95Ms: Number(targetP95) || 0,
-          targetP99Ms: Number(targetP99) || 0,
-          maxErrorRate: Number(maxErrorRate) || 0,
-          minApdex: Number(minApdex) || 0,
-        }
-      : null;
-
-    try {
-      const res = await authFetch("http://localhost:4000/api/load-test", {
+      const { parsedHeaders, parsedBody } = parseRequestInput();
+      const res = await authFetch(`${API_BASE}/api/load-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           method,
           url: url.trim(),
-          concurrency: Number(concurrency) || 1,
-          totalRequests: Number(totalRequests) || 1,
-          headers: payloads.parsedHeaders,
-          body: payloads.parsedBody,
-          timeout: Number(timeout) || 10000,
-          useMultiCore,
-          workerCount: Number(workerCount) || 4,
-          slaBudget,
+          headers: parsedHeaders,
+          body: parsedBody,
+          timeout: Number(requestTimeout) || 10000,
+          concurrency: Number(concurrency),
+          totalRequests: Number(totalRequests),
         }),
       });
       const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (res.status === 401 || res.status === 403) {
+          clearAuthStorage();
+          setCurrentUser(null);
+          setAuthModalTab("login");
+          setAuthModalOpen(true);
+        }
+        throw new Error(data.error || "Load test failed");
+      }
       setResponse(data);
-
-      if (data.success && data.sessionRun) {
-        if (!currentUser || data.isGuest) {
-          const updated = addGuestSessionRun(data.sessionRun);
-          setGuestRuns(updated);
-        } else {
-          fetchTestRuns();
-        }
-      }
+      await loadHistory();
+      showToast("Load test completed and saved to history");
     } catch (err) {
-      setResponse({ success: false, error: err.message });
+      setError(err.message || "Could not run load test");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleCompare() {
-    if (!compareRunA || !compareRunB) return;
-    setCompareLoading(true);
-    setCompareResult(null);
-
+  async function openRun(runId) {
+    setSelectedRun(null);
+    setError("");
     try {
-      const res = await authFetch(
-        `http://localhost:4000/api/compare?runA=${compareRunA}&runB=${compareRunB}`
-      );
+      const res = await authFetch(`${API_BASE}/api/test-runs/${runId}`);
       const data = await res.json();
-      if (data.success) {
-        setCompareResult(data);
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not open this run");
+      setSelectedRun(data);
+    } catch (err) {
+      setError(err.message || "Could not open this run");
+    }
+  }
+
+  async function deleteRun(runId) {
+    try {
+      const res = await authFetch(`${API_BASE}/api/test-runs/${runId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not delete this run");
+      setTestRuns((runs) => runs.filter((run) => run.id !== runId));
+      if (selectedRun?.run.id === runId) setSelectedRun(null);
+      setError("");
+      showToast("Test run deleted");
+    } catch (err) {
+      setError(err.message || "Could not delete this run");
+    }
+  }
+
+  async function clearHistory() {
+    try {
+      const res = await authFetch(`${API_BASE}/api/test-runs`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not clear history");
+      setTestRuns([]);
+      setSelectedRun(null);
+      setError("");
+      showToast("Run history cleared");
+    } catch (err) {
+      setError(err.message || "Could not clear history");
+    }
+  }
+
+  async function confirmDelete() {
+    if (!confirmation) return;
+    setConfirmationBusy(true);
+    try {
+      if (confirmation.type === "run") {
+        await deleteRun(confirmation.runId);
       } else {
-        alert(data.error || "Comparison failed");
+        await clearHistory();
       }
-    } catch (err) {
-      alert(err.message);
+      setConfirmation(null);
     } finally {
-      setCompareLoading(false);
+      setConfirmationBusy(false);
     }
   }
 
-  async function handleRunScalingTest() {
-    setScalingLoading(true);
-    setScalingResult(null);
-
-    let payloads;
-    try {
-      payloads = parseJsonPayloads();
-    } catch (err) {
-      alert(err.message);
-      setScalingLoading(false);
-      return;
-    }
-
-    const levels = scalingLevels
-      .split(",")
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => !isNaN(n) && n > 0);
-
-    if (levels.length === 0) {
-      alert("Please provide at least one valid concurrency level (e.g. 1, 5, 10)");
-      setScalingLoading(false);
-      return;
-    }
-
-    try {
-      const res = await authFetch("http://localhost:4000/api/scaling-test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: url.trim(),
-          method,
-          totalRequestsPerLevel: Number(scalingReqs) || 20,
-          concurrencyLevels: levels,
-          headers: payloads.parsedHeaders,
-          body: payloads.parsedBody,
-          timeout: Number(timeout) || 10000,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setScalingResult(data);
-      } else {
-        alert(data.error || "Scaling test failed");
-      }
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setScalingLoading(false);
-    }
+  function handleLogout() {
+    clearAuthStorage();
+    setCurrentUser(null);
+    setTestRuns([]);
+    setSelectedRun(null);
+    showToast("Signed out");
   }
 
-  async function handleRunWorkflow() {
-    setWorkflowLoading(true);
-    setWorkflowResult(null);
-
-    let parsedSteps;
-    try {
-      parsedSteps = JSON.parse(workflowSteps);
-    } catch {
-      alert("Workflow steps must be a valid JSON array");
-      setWorkflowLoading(false);
-      return;
-    }
-
-    try {
-      const res = await authFetch("http://localhost:4000/api/workflow", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ steps: parsedSteps }),
-      });
-      const data = await res.json();
-      setWorkflowResult(data);
-    } catch (err) {
-      setWorkflowResult({ success: false, error: err.message });
-    } finally {
-      setWorkflowLoading(false);
-    }
+  function handleAuthSuccess(user) {
+    setCurrentUser(user);
+    loadHistory();
+    showToast("Signed in successfully");
   }
 
-  function exportResultsAsJson(data) {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const href = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = `loadtest-run-${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(href);
-  }
-
-  function exportResultsAsCsv(results) {
-    if (!results || results.length === 0) return;
-    const header = "RequestIndex,DurationMs,Status,Success\n";
-    const rows = results
-      .map((r) => `${(r.requestIndex ?? 0) + 1},${r.durationMs ?? 0},${r.status ?? "ERR"},${r.success ? 1 : 0}`)
-      .join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const href = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = `loadtest-requests-${Date.now()}.csv`;
-    link.click();
-    URL.revokeObjectURL(href);
-  }
-
-  const effectiveRuns = currentUser ? testRuns : guestRuns;
-  const filteredRuns = effectiveRuns.filter((r) => {
-    if (!historySearch.trim()) return true;
-    const q = historySearch.toLowerCase();
-    return (
-      r.url?.toLowerCase().includes(q) ||
-      r.method?.toLowerCase().includes(q) ||
-      String(r.id).includes(q)
-    );
-  });
+  const metrics = response?.metrics;
 
   return (
-    <div className="app-container" data-theme={theme}>
+    <main className="app-container">
+      <ToastNotification toast={toast} onClose={() => setToast(null)} />
       <header className="app-header">
         <div className="brand">
-          <div className="brand-icon">P</div>
+          <div className="brand-icon" aria-hidden="true">↗</div>
           <div>
             <h1>PulseAPI</h1>
-            <div className="brand-subtitle">API PERFORMANCE LAB</div>
+            <p className="brand-subtitle">A simple API testing and load testing tool</p>
           </div>
         </div>
-
         <div className="header-actions">
-          <button
-            className="btn-secondary"
-            onClick={() => {
-              setImportInput("");
-              setImportError("");
-              setParsedEndpoints([]);
-              setShowImportModal(true);
-            }}
-          >
-            <span>Import collection</span>
-          </button>
-
-          <button
-            className="theme-toggle"
-            type="button"
-            onClick={() => setTheme((currentTheme) => currentTheme === "dark" ? "light" : "dark")}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            aria-pressed={theme === "light"}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          >
-            <span aria-hidden="true">{theme === "dark" ? "☼" : "☾"}</span>
-            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-          </button>
-
-          <UserMenu
-            currentUser={currentUser}
-            onOpenAuth={(tab) => {
-              setAuthModalTab(tab);
-              setAuthModalOpen(true);
-            }}
-            onLogout={handleLogout}
-            onViewMyRuns={handleViewMyRuns}
-          />
+          {currentUser ? (
+            <UserMenu
+              currentUser={currentUser}
+              onViewHistory={() => setMode("history")}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <button className="btn-primary" onClick={() => setAuthModalOpen(true)}>
+              Sign in / Register
+            </button>
+          )}
         </div>
       </header>
 
-      <div className="presets-bar">
-        <span className="presets-label">Quick targets</span>
-        {PRESETS.map((p, i) => (
-          <button
-            key={i}
-            className="preset-chip"
-            onClick={() => handleLoadPreset(p)}
-          >
-            {p.name}
-          </button>
-        ))}
-      </div>
-
-      <nav className="nav-tabs">
-        {[
-          { id: "load", label: "Load test", icon: "01" },
-          { id: "single", label: "Request", icon: "02" },
-          { id: "scaling", label: "Scaling", icon: "03" },
-          { id: "workflow", label: "Workflow", icon: "04" },
-          { id: "compare", label: "Compare", icon: "05" },
-          { id: "history", label: "History", icon: "06" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            className={`nav-tab ${mode === tab.id ? "active" : ""}`}
-            aria-current={mode === tab.id ? "page" : undefined}
-            onClick={() => {
-              setMode(tab.id);
-              if (tab.id === "history" || tab.id === "compare") {
-                fetchTestRuns();
-              }
-            }}
-          >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-
       <section className="workstation-intro">
         <div className="workstation-copy">
-          <div className="workstation-eyebrow">PERFORMANCE WORKSTATION / LOCAL</div>
-          <h2>Measure what your API does under pressure.</h2>
-          <p>Send requests, simulate concurrent traffic, and inspect latency, throughput, and failures.</p>
+          <div className="workstation-eyebrow">API TESTING / LOCAL</div>
+          <h2>Test an API, then measure how it handles load.</h2>
+          <p>Start with one request. When you are ready, run a small load test and review the results.</p>
         </div>
         <div className="session-indicator">
           <span className={`session-dot ${currentUser ? "account" : "guest"}`} />
           <div>
-            <strong>{currentUser ? `SIGNED IN / @${currentUser.username}` : "GUEST SESSION"}</strong>
-            <span>{currentUser ? "Runs are saved to your account" : "Test now; save runs to an account later"}</span>
+            <strong>{currentUser ? `SIGNED IN / @${currentUser.username}` : "NOT SIGNED IN"}</strong>
+            <span>{currentUser ? "Your load-test runs are saved to your account" : "Sign in is required to save and run load tests"}</span>
           </div>
         </div>
       </section>
 
-      {(mode === "single" || mode === "load" || mode === "scaling") && (
+      <nav className="nav-tabs" aria-label="Main navigation">
+        {[
+          { id: "load", label: "Load Test" },
+          { id: "request", label: "Single Request" },
+          { id: "history", label: "History" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            className={`nav-tab ${mode === tab.id ? "active" : ""}`}
+            onClick={() => {
+              setMode(tab.id);
+              setResponse(null);
+              setError("");
+              if (tab.id === "history" && currentUser) loadHistory();
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {error && <div className="beginner-alert error" role="alert">{error}</div>}
+
+      {(mode === "load" || mode === "request") && (
         <section className="card">
           <div className="card-title">
-            <span>
-              {mode === "single"
-                ? "Individual Request Inspector"
-                : mode === "load"
-                ? "Concurrent Load Test Engine"
-                : "Stepped Concurrency Scaling Benchmark"}
-            </span>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-              {mode === "load" && `${totalRequests} reqs @ ${concurrency} VUs ${useMultiCore ? `(${workerCount} threads)` : ""}`}
-            </span>
+            {mode === "load" ? "Run a Load Test" : "Send a Single Request"}
           </div>
 
           <div className="request-bar">
             <select
-              className={`method-select method-${method}`}
+              className="method-select"
               value={method}
-              onChange={(e) => setMethod(e.target.value)}
+              onChange={(event) => setMethod(event.target.value)}
+              aria-label="HTTP method"
             >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="DELETE">DELETE</option>
-              <option value="PATCH">PATCH</option>
+              {["GET", "POST", "PUT", "DELETE", "PATCH"].map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
             </select>
-
             <input
-              type="text"
               className="url-input"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(event) => setUrl(event.target.value)}
               placeholder="https://api.example.com/endpoint"
+              aria-label="Request URL"
             />
-
-            {mode === "single" && (
-              <button
-                className="btn-primary"
-                onClick={handleSendSingleRequest}
-                disabled={loading || !url.trim()}
-              >
-                {loading ? "Sending..." : "Send Request"}
-              </button>
-            )}
-
-            {mode === "load" && (
-              <button
-                className="btn-primary"
-                onClick={handleRunLoadTest}
-                disabled={loading || !url.trim()}
-              >
-                {loading ? `Testing (${progress.completed}/${progress.total})...` : "Launch Load Test"}
-              </button>
-            )}
-
-            {mode === "scaling" && (
-              <button
-                className="btn-primary"
-                onClick={handleRunScalingTest}
-                disabled={scalingLoading || !url.trim()}
-              >
-                {scalingLoading ? "Testing Matrix..." : "Launch Scaling Test"}
-              </button>
-            )}
+            <button
+              className="btn-primary"
+              onClick={mode === "load" ? runLoadTest : sendRequest}
+              disabled={loading || !url.trim()}
+            >
+              {loading ? "Working..." : mode === "load" ? "Run Load Test" : "Send Request"}
+            </button>
           </div>
 
-          {mode === "load" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", marginTop: "0.25rem" }}>
-              <div className="options-row">
-                <div className="option-group">
-                  <label>Virtual Users (VUs):</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="500"
-                    className="option-input"
-                    value={concurrency}
-                    onChange={(e) => setConcurrency(Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="option-group">
-                  <label>Total Requests:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="50000"
-                    className="option-input"
-                    style={{ width: "95px" }}
-                    value={totalRequests}
-                    onChange={(e) => setTotalRequests(Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="option-group">
-                  <label>Timeout (ms):</label>
-                  <input
-                    type="number"
-                    min="500"
-                    step="500"
-                    className="option-input"
-                    style={{ width: "95px" }}
-                    value={timeout}
-                    onChange={(e) => setTimeoutVal(Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="option-group" style={{ flexDirection: "row", alignItems: "center", gap: "0.6rem", marginTop: "auto" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}>
-                    <input
-                      type="checkbox"
-                      checked={useMultiCore}
-                      onChange={(e) => setUseMultiCore(e.target.checked)}
-                    />
-                    <span>Multi-core engine</span>
-                  </label>
-                  {useMultiCore && (
-                    <select
-                      value={workerCount}
-                      onChange={(e) => setWorkerCount(Number(e.target.value))}
-                      className="option-input"
-                      style={{ padding: "0.25rem 0.5rem" }}
-                    >
-                      <option value="2">2 Worker Threads</option>
-                      <option value="4">4 Worker Threads</option>
-                      <option value="8">8 Worker Threads</option>
-                      <option value="16">16 Worker Threads</option>
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              <div className="budget-collapsible">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: 700, fontSize: "0.875rem" }}>
-                    <input
-                      type="checkbox"
-                      checked={enableSlaBudget}
-                      onChange={(e) => setEnableSlaBudget(e.target.checked)}
-                    />
-                    <span>Enforce SLA performance budget</span>
-                  </label>
-                  <span style={{ fontSize: "0.75rem", color: enableSlaBudget ? "var(--accent)" : "var(--text-dim)", fontWeight: 600 }}>
-                    {enableSlaBudget ? "Active Evaluation" : "Disabled"}
-                  </span>
-                </div>
-
-                {enableSlaBudget && (
-                  <div className="budget-inputs-grid">
-                    <div className="option-group">
-                      <label>Target P95 (ms):</label>
-                      <input
-                        type="number"
-                        min="10"
-                        className="option-input"
-                        value={targetP95}
-                        onChange={(e) => setTargetP95(Number(e.target.value))}
-                      />
-                    </div>
-                    <div className="option-group">
-                      <label>Target P99 (ms):</label>
-                      <input
-                        type="number"
-                        min="10"
-                        className="option-input"
-                        value={targetP99}
-                        onChange={(e) => setTargetP99(Number(e.target.value))}
-                      />
-                    </div>
-                    <div className="option-group">
-                      <label>Max Error Rate (%):</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        className="option-input"
-                        value={maxErrorRate}
-                        onChange={(e) => setMaxErrorRate(Number(e.target.value))}
-                      />
-                    </div>
-                    <div className="option-group">
-                      <label>Min Apdex Score:</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        className="option-input"
-                        value={minApdex}
-                        onChange={(e) => setMinApdex(Number(e.target.value))}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {mode === "scaling" && (
-            <div className="options-row">
-              <div className="option-group">
-                <label>Concurrency Matrix Levels:</label>
-                <input
-                  type="text"
-                  style={{ width: "200px" }}
-                  value={scalingLevels}
-                  onChange={(e) => setScalingLevels(e.target.value)}
-                  placeholder="1, 5, 10, 25"
-                />
-              </div>
-
-              <div className="option-group">
-                <label>Requests Per Level:</label>
-                <input
-                  type="number"
-                  min="1"
-                  className="option-input"
-                  style={{ width: "95px" }}
-                  value={scalingReqs}
-                  onChange={(e) => setScalingReqs(Number(e.target.value))}
-                />
-              </div>
-
-              <div className="option-group">
-                <label>Timeout (ms):</label>
-                <input
-                  type="number"
-                  min="500"
-                  step="500"
-                  className="option-input"
-                  style={{ width: "95px" }}
-                  value={timeout}
-                  onChange={(e) => setTimeoutVal(Number(e.target.value))}
-                />
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginTop: "0.75rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div className="sub-tabs">
-                <button
-                  className={`sub-tab ${activeSubTab === "headers" ? "active" : ""}`}
-                  onClick={() => setActiveSubTab("headers")}
-                >
-                  Headers (JSON)
-                </button>
-                <button
-                  className={`sub-tab ${activeSubTab === "body" ? "active" : ""}`}
-                  onClick={() => setActiveSubTab("body")}
-                >
-                  Request Body (JSON)
-                </button>
-              </div>
-
-              <button
-                className="btn-secondary"
-                style={{ padding: "0.25rem 0.65rem", fontSize: "0.75rem" }}
-                onClick={() => {
-                  if (activeSubTab === "headers") prettyPrintJson(headers, setHeaders);
-                  else prettyPrintJson(body, setBody);
-                }}
-              >
-                Format JSON
-              </button>
-            </div>
-
-            {activeSubTab === "headers" && (
+          <div className="beginner-form-grid">
+            <label>
+              Request headers (JSON)
               <textarea
                 className="code-editor"
                 value={headers}
-                onChange={(e) => setHeaders(e.target.value)}
-                placeholder='{\n  "Authorization": "Bearer token"\n}'
+                onChange={(event) => setHeaders(event.target.value)}
+                rows={5}
               />
-            )}
-
-            {activeSubTab === "body" && (
+            </label>
+            <label>
+              Request body (optional)
               <textarea
                 className="code-editor"
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder='{\n  "title": "foo",\n  "body": "bar",\n  "userId": 1\n}'
+                onChange={(event) => setBody(event.target.value)}
+                rows={5}
+                placeholder='{"example": "value"}'
               />
+            </label>
+          </div>
+
+          <div className="options-row">
+            {mode === "load" && (
+              <>
+                <label className="option-group">
+                  <span>Concurrent requests</span>
+                  <input
+                    className="option-input"
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={concurrency}
+                    onChange={(event) => setConcurrency(event.target.value)}
+                  />
+                </label>
+                <label className="option-group">
+                  <span>Total requests</span>
+                  <input
+                    className="option-input"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    value={totalRequests}
+                    onChange={(event) => setTotalRequests(event.target.value)}
+                  />
+                </label>
+              </>
             )}
-          </div>
-        </section>
-      )}
-
-      {loading && mode === "load" && (
-        <section className="card">
-          <div className="progress-container">
-            <div className="progress-labels">
-              <span>Dispatching concurrent request load</span>
-              <span style={{ fontFamily: "var(--font-mono)" }}>
-                {progress.completed} / {progress.total} requests (
-                {Math.round((progress.completed / (progress.total || 1)) * 100)}%)
-              </span>
-            </div>
-            <div className="progress-track">
-              <div
-                className="progress-fill"
-                style={{
-                  width: `${Math.round((progress.completed / (progress.total || 1)) * 100)}%`,
-                }}
+            <label className="option-group">
+              <span>Timeout (milliseconds)</span>
+              <input
+                className="option-input"
+                type="number"
+                min="500"
+                max="60000"
+                step="500"
+                value={requestTimeout}
+                onChange={(event) => setRequestTimeout(event.target.value)}
               />
-            </div>
+            </label>
           </div>
+
+          {mode === "load" && !currentUser && (
+            <p className="beginner-help">Sign in or create an account to run a load test and save its results to your history.</p>
+          )}
         </section>
       )}
 
-      {mode === "single" && response && (
+      {(mode === "request" ? response : metrics) && (
         <section className="card">
           <div className="card-title">
-            <span>Response Inspector</span>
-            <div className="response-header">
-              <StatusBadge status={response.status} />
-              <span style={{ fontSize: "0.85rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-                Latency: <strong>{response.durationMs}ms</strong>
-              </span>
-            </div>
+            <span>{mode === "request" ? "Request Result" : "Load Test Results"}</span>
+            {response.status && <StatusBadge status={response.status} />}
           </div>
-
-          {!response.success && response.error && (
-            <div className="insight-item error">
-              <span>⚠️</span>
-              <div>
-                <strong>Request Failed:</strong> {response.error}
-              </div>
-            </div>
-          )}
-
-          <div className="sub-tabs">
-            <button
-              className={`sub-tab ${singleResponseTab === "body" ? "active" : ""}`}
-              onClick={() => setSingleResponseTab("body")}
-            >
-              Response Body
-            </button>
-            <button
-              className={`sub-tab ${singleResponseTab === "headers" ? "active" : ""}`}
-              onClick={() => setSingleResponseTab("headers")}
-            >
-              Headers
-            </button>
-            <button
-              className={`sub-tab ${singleResponseTab === "raw" ? "active" : ""}`}
-              onClick={() => setSingleResponseTab("raw")}
-            >
-              Raw Payload
-            </button>
-          </div>
-
-          <div>
-            {singleResponseTab === "body" && (
-              <pre className="raw-json-box">
-                {typeof response.body === "object"
-                  ? JSON.stringify(response.body, null, 2)
-                  : String(response.body ?? "No body returned")}
-              </pre>
-            )}
-
-            {singleResponseTab === "headers" && (
-              <pre className="raw-json-box">
-                {JSON.stringify(response.headers ?? {}, null, 2)}
-              </pre>
-            )}
-
-            {singleResponseTab === "raw" && (
-              <pre className="raw-json-box">
-                {JSON.stringify(response, null, 2)}
-              </pre>
-            )}
-          </div>
-        </section>
-      )}
-
-      {mode === "load" && response && response.metrics && (
-        <section className="card">
-          <div className="card-title">
-            <span>Run metrics</span>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              {!currentUser && (
-                <button
-                  className="btn-save-account"
-                  onClick={() =>
-                    handleSaveRunToAccount(
-                      response.sessionRun || {
-                        url,
-                        method,
-                        concurrency,
-                        total_requests: totalRequests,
-                        total_duration_ms: response.totalDurationMs,
-                        metrics: response.metrics,
-                        results: response.results,
-                        apdex: response.apdex,
-                        insights: response.insights,
-                        slaVerdict: response.slaVerdict,
-                      }
-                    )
-                  }
-                >
-                  <span>💾</span>
-                  <span>Save to Account</span>
-                </button>
-              )}
-              <button
-                className="btn-primary"
-                style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem" }}
-                onClick={() =>
-                  generateExecutivePdfReport({
-                    run: { url, method, concurrency, total_requests: totalRequests },
-                    metrics: response.metrics,
-                    apdex: response.apdex,
-                    insights: response.insights,
-                    slaVerdict: response.slaVerdict,
-                  })
-                }
-              >
-                📄 Export Executive PDF
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => exportResultsAsJson(response)}
-              >
-                Export JSON
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => exportResultsAsCsv(response.results)}
-              >
-                Export CSV
-              </button>
-            </div>
-          </div>
-
-          <div className="metrics-grid">
-            <MetricCard label="Total Requests" value={response.metrics.totalRequests} />
-            <MetricCard
-              label="Success Rate"
-              value={response.metrics.successRate}
-              unit="%"
-              highlight
-            />
-            <MetricCard label="Avg Latency" value={response.metrics.avgMs} unit="ms" />
-            <MetricCard label="P50 Latency" value={response.metrics.p50} unit="ms" />
-            <MetricCard label="P95 Latency" value={response.metrics.p95} unit="ms" highlight />
-            <MetricCard label="P99 Latency" value={response.metrics.p99} unit="ms" />
-            <MetricCard
-              label="Throughput"
-              value={response.metrics.throughputRps}
-              unit=" req/s"
-              highlight
-            />
-            <MetricCard label="Duration" value={response.totalDurationMs} unit="ms" />
-          </div>
-
-          {response.slaVerdict && <SlaVerdictCard slaVerdict={response.slaVerdict} />}
-
-          {response.apdex && <ApdexCard apdex={response.apdex} />}
-
-          {response.insights && response.insights.length > 0 && (
-            <div>
-              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 700 }}>
-                Performance insights
-              </div>
-              <InsightsList insights={response.insights} />
-            </div>
-          )}
-
-          {response.results && response.results.length > 0 && (
+          {mode === "request" ? (
             <>
+              <div className="metrics-grid">
+                <MetricCard label="Status" value={response.status || "Failed"} />
+                <MetricCard label="Response time" value={response.durationMs} unit=" ms" />
+              </div>
+              <div className="beginner-response">
+                <ResponseViewer value={response.body ?? response.error} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="metrics-grid">
+                <MetricCard label="Requests" value={metrics.totalRequests} />
+                <MetricCard label="Success rate" value={metrics.successRate} unit="%" />
+                <MetricCard label="Average latency" value={metrics.avgMs} unit=" ms" />
+                <MetricCard label="Minimum latency" value={metrics.minMs} unit=" ms" />
+                <MetricCard label="Maximum latency" value={metrics.maxMs} unit=" ms" />
+                <MetricCard label="P95 latency" value={metrics.p95} unit=" ms" />
+                <MetricCard label="Throughput" value={metrics.throughputRps} unit=" req/s" />
+                <MetricCard label="Total duration" value={response.totalDurationMs} unit=" ms" />
+              </div>
               <LatencyChart results={response.results} />
-              <StatusBreakdownChart results={response.results} />
             </>
           )}
         </section>
       )}
 
-      {mode === "scaling" && scalingResult && (
+      {mode === "history" && (
         <section className="card">
           <div className="card-title">
-            <span>Scaling Matrix Results (Group #{scalingResult.scalingGroupId})</span>
-            <button
-              className="btn-primary"
-              style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem" }}
-              onClick={() =>
-                generateExecutivePdfReport({
-                  run: { url, method, concurrency: "Stepped Matrix", total_requests: scalingReqs * scalingResult.runs.length },
-                  metrics: scalingResult.runs[scalingResult.runs.length - 1]?.metrics,
-                  apdex: null,
-                  insights: scalingResult.insights,
-                  slaVerdict: null,
-                })
-              }
-            >
-              📄 Export Executive PDF
-            </button>
-          </div>
-
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Concurrency</th>
-                <th>Avg Latency</th>
-                <th>P50</th>
-                <th>P95</th>
-                <th>P99</th>
-                <th>Throughput</th>
-                <th>Success Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scalingResult.runs.map((r) => (
-                <tr key={r.concurrency}>
-                  <td>
-                    <strong>{r.concurrency} VUs</strong>
-                  </td>
-                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.avgMs}ms</td>
-                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.p50}ms</td>
-                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.p95}ms</td>
-                  <td style={{ fontFamily: "var(--font-mono)" }}>{r.metrics.p99}ms</td>
-                  <td style={{ color: "var(--success)", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
-                    {r.metrics.throughputRps} rps
-                  </td>
-                  <td>
-                    <span className={r.metrics.successRate >= 99 ? "badge badge-2xx" : "badge badge-4xx"}>
-                      {r.metrics.successRate}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {scalingResult.insights && scalingResult.insights.length > 0 && (
-            <div style={{ marginTop: "1rem" }}>
-              <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 700 }}>
-                Sweet Spot & Capacity Saturation Analysis
-              </div>
-              <InsightsList insights={scalingResult.insights} />
-            </div>
-          )}
-
-          <ScalingChart runs={scalingResult.runs} />
-        </section>
-      )}
-
-      {mode === "workflow" && (
-        <section className="card">
-          <div className="card-title">
-            <span>Chained Multi-Step Workflow Engine</span>
-            <button
-              className="btn-primary"
-              onClick={handleRunWorkflow}
-              disabled={workflowLoading}
-            >
-              {workflowLoading ? "Executing Steps..." : "Run Workflow"}
-            </button>
-          </div>
-
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "0.25rem 0 0.75rem" }}>
-            Chain dependent requests where downstream steps dynamically extract values from upstream responses using{" "}
-            <code>&#123;&#123;variableName&#125;&#125;</code> template syntax.
-          </p>
-
-          <textarea
-            className="code-editor"
-            style={{ height: "240px" }}
-            value={workflowSteps}
-            onChange={(e) => setWorkflowSteps(e.target.value)}
-          />
-
-          {workflowResult && (
-            <div style={{ marginTop: "1.25rem" }}>
-              <div className="card-title">
-                <span>Workflow Execution Summary</span>
-                <StatusBadge status={workflowResult.success ? 200 : 500} />
-              </div>
-
-              <div className="metrics-grid">
-                <MetricCard label="Total Steps" value={workflowResult.totalSteps} />
-                <MetricCard
-                  label="Passed Steps"
-                  value={workflowResult.completedSteps}
-                  highlight={workflowResult.success}
-                />
-                <MetricCard
-                  label="Total Duration"
-                  value={workflowResult.totalDurationMs}
-                  unit="ms"
-                />
-              </div>
-
-              {workflowResult.stepResults && (
-                <div style={{ marginTop: "1rem" }}>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Step #</th>
-                        <th>Name</th>
-                        <th>Method & URL</th>
-                        <th>Status</th>
-                        <th>Duration</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workflowResult.stepResults.map((s) => (
-                        <tr key={s.stepIndex}>
-                          <td>#{s.stepIndex + 1}</td>
-                          <td>
-                            <strong>{s.name}</strong>
-                          </td>
-                          <td style={{ fontSize: "0.8rem", fontFamily: "var(--font-mono)" }}>
-                            {s.request?.method} {s.request?.url}
-                          </td>
-                          <td>
-                            <StatusBadge status={s.status} />
-                          </td>
-                          <td style={{ fontFamily: "var(--font-mono)" }}>{s.durationMs}ms</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {mode === "compare" && (
-        <section className="card">
-          <div className="card-title">
-            <span>Regression & Diff Engine (A/B Test Run Comparison)</span>
-          </div>
-
-          <div className="request-bar">
-            <div className="option-group" style={{ flex: 1 }}>
-              <label>Baseline Run (Run A):</label>
-              <select
-                className="option-input"
-                style={{ width: "100%" }}
-                value={compareRunA}
-                onChange={(e) => setCompareRunA(e.target.value)}
+            <span>Saved Load-Test History</span>
+            {currentUser && testRuns.length > 0 && (
+              <button
+                className="btn-danger"
+                onClick={() => setConfirmation({
+                  type: "history",
+                  title: "Clear your run history?",
+                  message: "This will permanently delete all of your saved load-test runs.",
+                })}
               >
-                <option value="">Select Baseline Run</option>
-                {testRuns.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    #{r.id} — {r.method} {r.url} ({r.concurrency} VUs, {r.avg_ms}ms avg)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="option-group" style={{ flex: 1 }}>
-              <label>Comparison Run (Run B):</label>
-              <select
-                className="option-input"
-                style={{ width: "100%" }}
-                value={compareRunB}
-                onChange={(e) => setCompareRunB(e.target.value)}
-              >
-                <option value="">Select Comparison Run</option>
-                {testRuns.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    #{r.id} — {r.method} {r.url} ({r.concurrency} VUs, {r.avg_ms}ms avg)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              className="btn-primary"
-              style={{ alignSelf: "flex-end" }}
-              onClick={handleCompare}
-              disabled={compareLoading || !compareRunA || !compareRunB}
-            >
-              {compareLoading ? "Analyzing..." : "Compare Runs"}
-            </button>
+                Clear History
+              </button>
+            )}
           </div>
-
-          {compareResult && compareResult.comparison && (
-            <div style={{ marginTop: "1.25rem" }}>
+          {!currentUser ? (
+            <div className="empty-state">
+              <strong>Sign in to view your history.</strong>
+              <p>Load-test runs are saved to your account.</p>
+              <button className="btn-primary" onClick={() => setAuthModalOpen(true)}>Sign in / Register</button>
+            </div>
+          ) : testRuns.length === 0 ? (
+            <div className="empty-state">
+              <strong>No saved load tests yet.</strong>
+              <p>Run a load test to see its results here.</p>
+            </div>
+          ) : (
+            <div className="beginner-table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Metric</th>
-                    <th>Run #{compareResult.runA.id} (Before)</th>
-                    <th>Run #{compareResult.runB.id} (After)</th>
-                    <th>Difference</th>
-                    <th>% Change</th>
-                    <th>Verdict</th>
+                    <th>Run</th>
+                    <th>Method and URL</th>
+                    <th>Concurrency</th>
+                    <th>Requests</th>
+                    <th>Average</th>
+                    <th>P95</th>
+                    <th>Success</th>
+                    <th>Date</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(compareResult.comparison).map(([metric, diff]) => {
-                    const isImproved = diff.verdict === "improved";
-                    const isDegraded = diff.verdict === "degraded";
-                    return (
-                      <tr key={metric}>
-                        <td>
-                          <strong>{metric}</strong>
-                        </td>
-                        <td style={{ fontFamily: "var(--font-mono)" }}>{diff.before}</td>
-                        <td style={{ fontFamily: "var(--font-mono)" }}>{diff.after}</td>
-                        <td style={{ fontFamily: "var(--font-mono)" }}>
-                          {diff.diff > 0 ? `+${diff.diff}` : diff.diff}
-                        </td>
-                        <td style={{ fontFamily: "var(--font-mono)" }}>
-                          {diff.percentChange > 0
-                            ? `+${diff.percentChange}%`
-                            : `${diff.percentChange}%`}
-                        </td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              isImproved
-                                ? "badge-2xx"
-                                : isDegraded
-                                ? "badge-4xx"
-                                : "badge-3xx"
-                            }`}
+                  {testRuns.map((run) => (
+                    <tr key={run.id}>
+                      <td>#{run.id}</td>
+                      <td><strong>{run.method}</strong> {run.url}</td>
+                      <td>{run.concurrency}</td>
+                      <td>{run.total_requests}</td>
+                      <td>{run.avg_ms} ms</td>
+                      <td>{run.p95} ms</td>
+                      <td>{run.success_rate}%</td>
+                      <td>{run.created_at}</td>
+                      <td>
+                        <div className="beginner-actions">
+                          <button className="btn-secondary" onClick={() => openRun(run.id)}>View</button>
+                          <button
+                            className="btn-danger"
+                            onClick={() => setConfirmation({
+                              type: "run",
+                              runId: run.id,
+                              title: "Delete this test run?",
+                              message: `Run #${run.id} and its request details will be permanently deleted.`,
+                            })}
                           >
-                            {diff.verdict.toUpperCase()}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1937,435 +637,41 @@ export default function App() {
         </section>
       )}
 
-      {mode === "history" && (
-        <section className="card">
-          {/* Guest Notice or Claim Unsaved Runs Banner */}
-          {!currentUser && (
-            <div className="guest-session-notice">
-              <div className="guest-notice-icon">⏱️</div>
-              <div className="guest-notice-content">
-                <div className="guest-notice-title">Guest Session (Temporary History)</div>
-                <div className="guest-notice-desc">
-                  You are using PulseAPI without logging in. Benchmark history is saved in your browser's temporary session and <strong>will be completely cleared when you close the application</strong>. Sign in or create an account to save runs permanently.
-                </div>
-              </div>
-              <button
-                className="btn-primary"
-                style={{ padding: "0.45rem 0.95rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}
-                onClick={() => {
-                  setAuthModalTab("register");
-                  setAuthModalOpen(true);
-                }}
-              >
-                ✨ Sign Up to Save
-              </button>
-            </div>
-          )}
-
-          {currentUser && guestRuns.length > 0 && (
-            <div className="claim-session-notice">
-              <div className="claim-notice-info">
-                <span className="claim-icon">💡</span>
-                <span>
-                  Found <strong>{guestRuns.length}</strong> unsaved run(s) from your guest session. Save them to your account?
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button
-                  className="btn-primary"
-                  style={{ padding: "0.35rem 0.75rem", fontSize: "0.775rem" }}
-                  onClick={handleBulkSaveGuestRuns}
-                >
-                  💾 Save All to My Account
-                </button>
-                <button
-                  className="btn-secondary"
-                  style={{ padding: "0.35rem 0.75rem", fontSize: "0.775rem" }}
-                  onClick={() => {
-                    clearGuestSessionRuns();
-                    setGuestRuns([]);
-                  }}
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="card-title">
-            <span>
-              {currentUser ? "Historical Test Run Records" : "Guest Session Benchmark History"}
-            </span>
-            <div style={{ display: "flex", gap: "0.65rem", alignItems: "center", flexWrap: "wrap" }}>
-              {currentUser && (
-                <div className="history-user-toggle">
-                  <button
-                    className={`toggle-pill ${!filterUserOnly ? "active" : ""}`}
-                    onClick={() => {
-                      setFilterUserOnly(false);
-                      fetchTestRuns(false);
-                    }}
-                  >
-                    🌐 All Runs
-                  </button>
-                  <button
-                    className={`toggle-pill ${filterUserOnly ? "active" : ""}`}
-                    onClick={() => {
-                      setFilterUserOnly(true);
-                      fetchTestRuns(true);
-                    }}
-                  >
-                    👤 My Runs Only
-                  </button>
-                </div>
-              )}
-              <input
-                type="text"
-                placeholder="Search history by URL or ID..."
-                className="option-input"
-                style={{ width: "200px" }}
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-              />
-              {effectiveRuns.length > 0 && (
-                <button
-                  className="btn-danger"
-                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem" }}
-                  onClick={handleClearAllRuns}
-                >
-                  {currentUser ? "Clear History" : "Clear Session"}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {filteredRuns.length === 0 ? (
-            <div className="empty-state">
-              <strong>{historySearch ? "No runs match this search." : "No performance runs yet."}</strong>
-              <p>
-                {historySearch
-                  ? "Try another URL, method, or run ID."
-                  : currentUser
-                  ? "Run a load test to start building your performance history."
-                  : "Run your first load test to start a temporary session history. Sign in later to save runs."}
-              </p>
-              {!historySearch && (
-                <button className="btn-primary" onClick={() => setMode("load")}>
-                  Configure a load test
-                </button>
-              )}
-            </div>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Author</th>
-                  <th>Method & Target URL</th>
-                  <th>VUs</th>
-                  <th>Total Reqs</th>
-                  <th>Avg Latency</th>
-                  <th>P95</th>
-                  <th>Throughput</th>
-                  <th>Success Rate</th>
-                  <th>Recorded At</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRuns.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="clickable"
-                    onClick={() => fetchRunDetail(r.id)}
-                  >
-                    <td style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>
-                      {typeof r.id === "number" ? `#${r.id}` : `⚡ ${String(r.id).substring(0, 10)}`}
-                    </td>
-                    <td>
-                      {r.owner_username ? (
-                        <span className="owner-badge">👤 @{r.owner_username}</span>
-                      ) : (
-                        <span className="guest-badge">⏱️ Session (Guest)</span>
-                      )}
-                    </td>
-                    <td style={{ fontFamily: "var(--font-mono)" }}>
-                      <span className={`method-${r.method}`} style={{ fontWeight: 800, marginRight: "0.5rem" }}>
-                        {r.method}
-                      </span>
-                      {r.url}
-                    </td>
-                    <td>{r.concurrency} VUs</td>
-                    <td>{r.total_requests}</td>
-                    <td style={{ fontFamily: "var(--font-mono)" }}>{r.avg_ms}ms</td>
-                    <td style={{ fontFamily: "var(--font-mono)" }}>{r.p95}ms</td>
-                    <td style={{ fontFamily: "var(--font-mono)", color: "var(--success)" }}>{r.throughput_rps} rps</td>
-                    <td>
-                      <span className={r.success_rate >= 99 ? "badge badge-2xx" : "badge badge-4xx"}>
-                        {r.success_rate}%
-                      </span>
-                    </td>
-                    <td style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
-                      {r.created_at}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: "0.35rem" }}>
-                        {!currentUser && (
-                          <button
-                            className="btn-save-row"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSaveRunToAccount(r);
-                            }}
-                            title="Save run to account"
-                          >
-                            💾 Save
-                          </button>
-                        )}
-                        <button
-                          className="btn-danger"
-                          style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
-                          onClick={(e) => handleDeleteRun(e, r.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
-      {selectedRunDetail && (
-        <div className="modal-overlay" onClick={() => setSelectedRunDetail(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      {selectedRun && (
+        <div className="modal-overlay" onClick={() => setSelectedRun(null)}>
+          <section className="modal-content beginner-run-modal" onClick={(event) => event.stopPropagation()}>
             <div className="card-title">
-              <span>
-                Test Run #{selectedRunDetail.run.id} Details: {selectedRunDetail.run.method}{" "}
-                {selectedRunDetail.run.url}
-              </span>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                {(!selectedRunDetail.run.user_id || selectedRunDetail.run.isGuest) && (
-                  <button
-                    className="btn-save-account"
-                    onClick={() => handleSaveRunToAccount(selectedRunDetail.run)}
-                  >
-                    <span>💾</span>
-                    <span>Save to Account</span>
-                  </button>
-                )}
-                <button
-                  className="btn-primary"
-                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.8rem" }}
-                  onClick={() =>
-                    generateExecutivePdfReport({
-                      run: selectedRunDetail.run,
-                      metrics: selectedRunDetail.metrics,
-                      apdex: selectedRunDetail.apdex,
-                      insights: selectedRunDetail.insights,
-                      slaVerdict: selectedRunDetail.slaVerdict,
-                    })
-                  }
-                >
-                  📄 Export Executive PDF
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={() => setSelectedRunDetail(null)}
-                >
-                  Close
-                </button>
-              </div>
+              <span>Run #{selectedRun.run.id}: {selectedRun.run.method} {selectedRun.run.url}</span>
+              <button className="btn-secondary" onClick={() => setSelectedRun(null)}>Close</button>
             </div>
-
             <div className="metrics-grid">
-              <MetricCard
-                label="Total Requests"
-                value={selectedRunDetail.metrics.totalRequests}
-              />
-              <MetricCard
-                label="Success Rate"
-                value={selectedRunDetail.metrics.successRate}
-                unit="%"
-                highlight
-              />
-              <MetricCard label="Avg Latency" value={selectedRunDetail.metrics.avgMs} unit="ms" />
-              <MetricCard label="P50 Latency" value={selectedRunDetail.metrics.p50} unit="ms" />
-              <MetricCard
-                label="P95 Latency"
-                value={selectedRunDetail.metrics.p95}
-                unit="ms"
-                highlight
-              />
-              <MetricCard label="P99 Latency" value={selectedRunDetail.metrics.p99} unit="ms" />
-              <MetricCard
-                label="Throughput"
-                value={selectedRunDetail.metrics.throughputRps}
-                unit=" req/s"
-                highlight
-              />
+              <MetricCard label="Requests" value={selectedRun.metrics.totalRequests} />
+              <MetricCard label="Success rate" value={selectedRun.metrics.successRate} unit="%" />
+              <MetricCard label="Average latency" value={selectedRun.metrics.avgMs} unit=" ms" />
+              <MetricCard label="Minimum latency" value={selectedRun.metrics.minMs} unit=" ms" />
+              <MetricCard label="Maximum latency" value={selectedRun.metrics.maxMs} unit=" ms" />
+              <MetricCard label="P95 latency" value={selectedRun.metrics.p95} unit=" ms" />
+              <MetricCard label="Throughput" value={selectedRun.metrics.throughputRps} unit=" req/s" />
             </div>
-
-            {selectedRunDetail.slaVerdict && <SlaVerdictCard slaVerdict={selectedRunDetail.slaVerdict} />}
-
-            {selectedRunDetail.apdex && <ApdexCard apdex={selectedRunDetail.apdex} />}
-
-            {selectedRunDetail.insights && (
-              <InsightsList insights={selectedRunDetail.insights} />
-            )}
-
-            {selectedRunDetail.requests && (
-              <>
-                <LatencyChart results={selectedRunDetail.requests} />
-                <div style={{ marginTop: "1rem" }}>
-                  <div style={{ marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 700 }}>
-                    Request Logs ({selectedRunDetail.requests.length} requests recorded)
-                  </div>
-                  <div style={{ maxHeight: "250px", overflowY: "auto" }}>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Request #</th>
-                          <th>Duration</th>
-                          <th>Status</th>
-                          <th>Result</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedRunDetail.requests.slice(0, 100).map((req, i) => (
-                          <tr key={i}>
-                            <td>#{req.request_index + 1}</td>
-                            <td style={{ fontFamily: "var(--font-mono)" }}>
-                              {req.duration_ms}ms
-                            </td>
-                            <td>
-                              <StatusBadge status={req.status} />
-                            </td>
-                            <td style={{ color: req.success ? "var(--success)" : "var(--danger)" }}>
-                              {req.success ? "Success" : "Failed"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+            <LatencyChart results={selectedRun.requests} />
+          </section>
         </div>
       )}
 
-      {showImportModal && (
-        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="card-title">
-              <span>Import API Definition / Request</span>
-              <button className="btn-secondary" onClick={() => setShowImportModal(false)}>
-                Close
-              </button>
-            </div>
+      <ConfirmationCard
+        confirmation={confirmation}
+        busy={confirmationBusy}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={confirmDelete}
+      />
 
-            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
-              Paste a <strong>cURL command</strong>, <strong>Swagger / OpenAPI JSON</strong>, or a <strong>Postman Collection (v2.1) JSON</strong> to automatically configure tests.
-            </p>
-
-            <textarea
-              className="code-editor"
-              style={{ height: "160px" }}
-              value={importInput}
-              onChange={(e) => setImportInput(e.target.value)}
-              placeholder="curl -X POST https://api.example.com/login -H 'Content-Type: application/json' -d '{&quot;username&quot;: &quot;admin&quot;}'"
-            />
-
-            {importError && (
-              <div className="insight-item error" style={{ margin: 0 }}>
-                <span>⚠️</span>
-                <div>{importError}</div>
-              </div>
-            )}
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-              <button className="btn-primary" onClick={handleImportSubmit} disabled={!importInput.trim()}>
-                Parse & Extract Endpoints
-              </button>
-            </div>
-
-            {parsedEndpoints.length > 0 && (
-              <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
-                    Extracted Endpoints ({parsedEndpoints.length} routes found)
-                  </div>
-                  <button className="btn-secondary" onClick={handleImportAsWorkflow}>
-                    Import All into Workflow Chain
-                  </button>
-                </div>
-
-                <div className="endpoint-picker">
-                  {parsedEndpoints.map((ep, idx) => (
-                    <div key={idx} className="endpoint-picker-item">
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        <span className={`method-${ep.method}`} style={{ fontWeight: 800, fontSize: "0.8rem" }}>
-                          {ep.method}
-                        </span>
-                        <span style={{ fontSize: "0.8rem", color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                          {ep.url}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", gap: "0.4rem" }}>
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
-                          onClick={() => handleSelectImportedEndpoint(ep, "single")}
-                        >
-                          Single Request
-                        </button>
-                        <button
-                          className="btn-primary"
-                          style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
-                          onClick={() => handleSelectImportedEndpoint(ep, "load")}
-                        >
-                          Load Test
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {detailLoading && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: "300px", textAlign: "center" }}>
-            Loading test run details...
-          </div>
-        </div>
-      )}
-
-      {saveNotification && (
-        <div className="save-toast-banner">
-          <span>{saveNotification}</span>
-          <button className="toast-close-btn" onClick={() => setSaveNotification("")}>
-            ✕
-          </button>
-        </div>
-      )}
-
-      <AuthModal
+      {authModalOpen && <AuthModal
+        key={authModalTab}
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         initialTab={authModalTab}
-        currentUser={currentUser}
         onAuthSuccess={handleAuthSuccess}
-        onLogout={handleLogout}
-      />
-    </div>
+      />}
+    </main>
   );
 }

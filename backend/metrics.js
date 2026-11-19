@@ -8,15 +8,11 @@ function calculateMetrics(results, totalDurationMs) {
   if (!Array.isArray(results) || results.length === 0) {
     return {
       totalRequests: 0,
-      successCount: 0,
-      errorCount: 0,
       successRate: 0,
       avgMs: 0,
       minMs: 0,
       maxMs: 0,
-      p50: 0,
       p95: 0,
-      p99: 0,
       throughputRps: 0,
     };
   }
@@ -26,7 +22,6 @@ function calculateMetrics(results, totalDurationMs) {
     .sort((a, b) => a - b);
 
   const successCount = results.filter((r) => r.success).length;
-  const errorCount = results.length - successCount;
 
   const sum = durations.reduce((total, d) => total + d, 0);
   const avgMs = durations.length > 0 ? sum / durations.length : 0;
@@ -36,15 +31,11 @@ function calculateMetrics(results, totalDurationMs) {
 
   return {
     totalRequests: results.length,
-    successCount,
-    errorCount,
     successRate: results.length > 0 ? Math.round(((successCount / results.length) * 100) * 100) / 100 : 0,
     avgMs: Math.round(avgMs),
     minMs: durations[0] ?? 0,
     maxMs: durations[durations.length - 1] ?? 0,
-    p50: percentile(durations, 50),
     p95: percentile(durations, 95),
-    p99: percentile(durations, 99),
     throughputRps: Math.round(throughputRps * 100) / 100,
   };
 }

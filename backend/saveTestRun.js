@@ -3,8 +3,8 @@ const db = require('./db');
 const insertRunStmt = db.prepare(`
   INSERT INTO test_runs (
     user_id, url, method, concurrency, total_requests, total_duration_ms,
-    avg_ms, min_ms, max_ms, p50, p95, p99, success_rate, throughput_rps, scaling_group_id
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    avg_ms, min_ms, max_ms, p95, success_rate, throughput_rps
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertRequestStmt = db.prepare(`
@@ -22,7 +22,6 @@ const saveTransaction = db.transaction((data) => {
     totalDurationMs,
     metrics,
     results,
-    scalingGroupId = null,
   } = data;
 
   const info = insertRunStmt.run(
@@ -35,12 +34,9 @@ const saveTransaction = db.transaction((data) => {
     metrics?.avgMs ?? 0,
     metrics?.minMs ?? 0,
     metrics?.maxMs ?? 0,
-    metrics?.p50 ?? 0,
     metrics?.p95 ?? 0,
-    metrics?.p99 ?? 0,
     metrics?.successRate ?? 0,
-    metrics?.throughputRps ?? 0,
-    scalingGroupId
+    metrics?.throughputRps ?? 0
   );
 
   const testRunId = info.lastInsertRowid;
