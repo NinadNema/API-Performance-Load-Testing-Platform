@@ -2,3 +2,12 @@ node_modules/
 *.db
 dist/
 .DS_Store
+.env
+.env.*
+backend/.env
+frontend/.env
+!frontend/.env.example
+!backend/.env.example
+.env
+.env.*
+!.env.example

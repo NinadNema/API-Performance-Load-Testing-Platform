@@ -26,6 +26,15 @@ Load tests require sign-in so each saved run belongs to an account. Single reque
 
 Prerequisites: Node.js 18 or newer and npm.
 
+Create local environment files before starting the servers:
+
+```powershell
+Copy-Item backend\.env.example backend\.env
+Copy-Item frontend\.env.example frontend\.env
+```
+
+Generate a random `JWT_SECRET` containing at least 32 characters and place it in `backend/.env`. `CORS_ORIGIN` should include the frontend origin, while `VITE_API_BASE_URL` can point to the backend URL.
+
 Start the backend:
 
 ```powershell

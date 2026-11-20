@@ -9,6 +9,7 @@ async function runLoadTest({
   headers = {},
   body = null,
   timeout = 10000,
+  lookup,
   onProgress,
 }) {
   const limiter = new ConcurrencyLimiter(concurrency);
@@ -20,12 +21,14 @@ async function runLoadTest({
       const start = performance.now();
       try {
         const response = await axios({
-          method,
+          method: method.toUpperCase(),
           url,
           headers,
           data: body,
           timeout,
           validateStatus: () => true,
+          maxRedirects: 0,
+          lookup,
         });
         const durationMs = performance.now() - start;
 

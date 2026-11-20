@@ -20,7 +20,7 @@ import {
   getStoredUser,
 } from "./utils/auth";
 
-const API_BASE = "http://localhost:4000";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 function MetricCard({ label, value, unit = "" }) {
   return (
@@ -208,6 +208,12 @@ export default function App() {
   }
 
   async function sendRequest() {
+    if (!currentUser) {
+      setAuthModalTab("login");
+      setAuthModalOpen(true);
+      return;
+    }
+
     setLoading(true);
     setResponse(null);
     setError("");
@@ -226,7 +232,15 @@ export default function App() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          clearAuthStorage();
+          setCurrentUser(null);
+          setAuthModalTab("login");
+          setAuthModalOpen(true);
+        }
+        throw new Error(data.error || "Request failed");
+      }
       setResponse(data);
       if (data.success) {
         showToast(data.status >= 400 ? `Request returned HTTP ${data.status}` : "Request completed");
@@ -307,8 +321,10 @@ export default function App() {
       if (selectedRun?.run.id === runId) setSelectedRun(null);
       setError("");
       showToast("Test run deleted");
+      return true;
     } catch (err) {
       setError(err.message || "Could not delete this run");
+      return false;
     }
   }
 
@@ -321,8 +337,10 @@ export default function App() {
       setSelectedRun(null);
       setError("");
       showToast("Run history cleared");
+      return true;
     } catch (err) {
       setError(err.message || "Could not clear history");
+      return false;
     }
   }
 
@@ -330,12 +348,13 @@ export default function App() {
     if (!confirmation) return;
     setConfirmationBusy(true);
     try {
+      let deleted = false;
       if (confirmation.type === "run") {
-        await deleteRun(confirmation.runId);
+        deleted = await deleteRun(confirmation.runId);
       } else {
-        await clearHistory();
+        deleted = await clearHistory();
       }
-      setConfirmation(null);
+      if (deleted) setConfirmation(null);
     } finally {
       setConfirmationBusy(false);
     }
@@ -519,6 +538,9 @@ export default function App() {
 
           {mode === "load" && !currentUser && (
             <p className="beginner-help">Sign in or create an account to run a load test and save its results to your history.</p>
+          )}
+          {mode === "request" && !currentUser && (
+            <p className="beginner-help">Sign in or create an account to send requests.</p>
           )}
         </section>
       )}

@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
@@ -5,6 +6,8 @@ const runLoadTest = require("./loadTestRunner");
 const calculateMetrics = require("./metrics");
 const saveTestRun = require("./saveTestRun");
 const db = require("./db");
+const { validateTargetUrl } = require("./targetSecurity");
+const createRateLimiter = require("./rateLimiter");
 const {
   registerUser,
   loginUser,
@@ -13,14 +16,31 @@ const {
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Origin is not allowed"));
+    }
+  },
+}));
 app.use(express.json({ limit: "1mb" }));
+
+const requestRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, limit: 60 });
+const loadTestRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, limit: 10 });
+const authRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, limit: 10 });
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-app.post("/api/auth/register", async (req, res) => {
+app.post("/api/auth/register", authRateLimiter, async (req, res) => {
   try {
     const { username, email, password, fullName } = req.body;
     const result = await registerUser({ username, email, password, fullName });
@@ -30,7 +50,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", authRateLimiter, async (req, res) => {
   try {
     const { identifier, password } = req.body;
     const result = await loginUser({ identifier, password });
@@ -44,21 +64,59 @@ app.get("/api/auth/me", authenticateToken, (req, res) => {
   res.json({ success: true, user: req.user });
 });
 
-app.post("/api/request", async (req, res) => {
-  const { method = "GET", url, headers = {}, body, timeout = 10000 } = req.body;
+app.post("/api/request", authenticateToken, requestRateLimiter, async (req, res) => {
+  const payload = req.body && typeof req.body === "object" && !Array.isArray(req.body)
+    ? req.body
+    : {};
+  const {
+    method = "GET",
+    url,
+    headers = {},
+    body,
+    timeout = 10000,
+  } = payload;
   if (!url || typeof url !== "string") {
     return res.status(400).json({ success: false, error: "A valid url is required" });
+  }
+
+  if (typeof method !== "string") {
+    return res.status(400).json({ success: false, error: "method must be a string" });
+  }
+
+  if (!["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"].includes(method.toUpperCase())) {
+    return res.status(400).json({ success: false, error: "Unsupported HTTP method" });
+  }
+
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+    return res.status(400).json({ success: false, error: "headers must be a JSON object" });
+  }
+
+  const timeoutMs = Number(timeout);
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 500 || timeoutMs > 60000) {
+    return res.status(400).json({
+      success: false,
+      error: "timeout must be a whole number between 500 and 60000 milliseconds",
+    });
+  }
+
+  let target;
+  try {
+    target = await validateTargetUrl(url);
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
   }
 
   const start = performance.now();
   try {
     const response = await axios({
-      method,
-      url,
+      method: method.toUpperCase(),
+      url: target.url,
       headers,
       data: body,
-      timeout: Number(timeout) || 10000,
+      timeout: timeoutMs,
       validateStatus: () => true,
+      maxRedirects: 0,
+      lookup: target.lookup,
     });
     res.json({
       success: true,
@@ -71,14 +129,16 @@ app.post("/api/request", async (req, res) => {
   } catch (err) {
     res.json({
       success: false,
-      error: err.message,
-      code: err.code,
+      error: "The target request failed",
       durationMs: Math.round(performance.now() - start),
     });
   }
 });
 
-app.post("/api/load-test", authenticateToken, async (req, res) => {
+app.post("/api/load-test", authenticateToken, loadTestRateLimiter, async (req, res) => {
+  const payload = req.body && typeof req.body === "object" && !Array.isArray(req.body)
+    ? req.body
+    : {};
   const {
     url,
     method = "GET",
@@ -87,10 +147,29 @@ app.post("/api/load-test", authenticateToken, async (req, res) => {
     headers = {},
     body = null,
     timeout = 10000,
-  } = req.body;
+  } = payload;
 
   if (!url || typeof url !== "string") {
     return res.status(400).json({ success: false, error: "A valid url is required" });
+  }
+
+  if (typeof method !== "string") {
+    return res.status(400).json({ success: false, error: "method must be a string" });
+  }
+
+  if (!["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"].includes(method.toUpperCase())) {
+    return res.status(400).json({ success: false, error: "Unsupported HTTP method" });
+  }
+
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+    return res.status(400).json({ success: false, error: "headers must be a JSON object" });
+  }
+
+  let target;
+  try {
+    target = await validateTargetUrl(url);
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
   }
 
   const requestCount = Number(totalRequests);
@@ -120,13 +199,14 @@ app.post("/api/load-test", authenticateToken, async (req, res) => {
   try {
     const start = performance.now();
     const results = await runLoadTest({
-      url,
+      url: target.url,
       method,
       concurrency: concurrencyCount,
       totalRequests: requestCount,
       headers,
       body,
       timeout: timeoutMs,
+      lookup: target.lookup,
     });
     const totalDurationMs = Math.round(performance.now() - start);
     const metrics = calculateMetrics(results, totalDurationMs);
@@ -149,7 +229,7 @@ app.post("/api/load-test", authenticateToken, async (req, res) => {
       results,
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: "Could not run the load test" });
   }
 });
 
@@ -160,7 +240,8 @@ app.get("/api/test-runs", authenticateToken, (req, res) => {
       .all(req.user.id);
     res.json({ success: true, runs });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Could not load test runs:", err);
+    res.status(500).json({ success: false, error: "Could not load test runs" });
   }
 });
 
@@ -187,7 +268,8 @@ app.get("/api/test-runs/:id", authenticateToken, (req, res) => {
     };
     res.json({ success: true, run, requests, metrics });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Could not load test run:", err);
+    res.status(500).json({ success: false, error: "Could not load test run" });
   }
 });
 
@@ -206,7 +288,8 @@ app.delete("/api/test-runs/:id", authenticateToken, (req, res) => {
     })();
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Could not delete test run:", err);
+    res.status(500).json({ success: false, error: "Could not delete test run" });
   }
 });
 
@@ -220,8 +303,36 @@ app.delete("/api/test-runs", authenticateToken, (req, res) => {
     })();
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Could not delete test runs:", err);
+    res.status(500).json({ success: false, error: "Could not delete test runs" });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  if (err?.type === "entity.parse.failed" || err instanceof SyntaxError) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid JSON in the request body",
+    });
+  }
+
+  if (err?.message === "Origin is not allowed") {
+    return res.status(403).json({
+      success: false,
+      error: "Origin is not allowed",
+    });
+  }
+
+  return res.status(err?.statusCode >= 400 && err?.statusCode < 500 ? err.statusCode : 500).json({
+    success: false,
+    error: err?.statusCode >= 400 && err?.statusCode < 500
+      ? err.message
+      : "An unexpected server error occurred",
+  });
 });
 
 const PORT = 4000;

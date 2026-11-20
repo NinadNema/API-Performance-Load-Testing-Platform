@@ -2,7 +2,13 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("./db");
 
-const JWT_SECRET = process.env.JWT_SECRET || "pulseapi_jwt_super_secret_key_2026";
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error(
+    "JWT_SECRET is required and must contain at least 32 characters"
+  );
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = "30d";
 
 function sanitizeUser(user) {
